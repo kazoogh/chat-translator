@@ -35,7 +35,7 @@ build a small external desktop companion that:
 - fully local contextual translation with a lightweight offline fallback.
 - compact always-on-top translation window.
 - start/stop, mute/unmute, and clear-history hotkeys.
-- push-to-talk voice replies with speaker/language targeting and clipboard output.
+- hold-to-talk voice replies with speaker/language targeting and clipboard output.
 - reply preview, copy confirmation, and easy correction before pasting into the game.
 - settings persisted locally.
 - local logs useful for debugging OCR accuracy.
@@ -136,6 +136,16 @@ flowchart TD
 
 this avoids the main flaw in the minimal prototype: a permanent `seen` set would suppress a legitimate repeated message forever and would grow without bound.
 
+### `message_classifier`
+
+- classify every detected line as `player_inbound`, `player_outbound`, `system`, or `unknown`.
+- announce only `player_inbound` messages by default.
+- identify player messages using username/message layout, separators, direction markers, OCR boxes, and chat colors.
+- identify system messages using their distinct layout/colors plus a versioned set of known patterns such as login, logout, item, event, and detector notifications.
+- suppress the user's own outgoing messages.
+- default uncertain lines to visible-but-silent instead of reading likely system noise aloud.
+- expose a diagnostic action to mark a false classification and improve fixture coverage.
+
 ### `translator`
 
 - detect language per message rather than assuming Russian.
@@ -187,18 +197,25 @@ example target behavior:
 - track the most recent inbound speaker as the default reply target.
 - allow explicit voice targeting such as `reply to Vasya` when several players are active.
 - never guess silently when two targets are equally plausible; show a small target chooser.
+- after several consecutive messages from one player, keep that player as the reply target.
+- display the active reply target and language before and during voice recording.
 
 ### `voice_reply`
 
-- start recording with a configurable push-to-talk hotkey.
+- use a configurable hold-to-talk key; `V` is supported when it does not conflict with the user's game controls.
+- start recording on key-down and stop recording on key-up.
+- observe the key without suppressing it; warn when the selected key also triggers an in-game action.
+- ignore accidental presses shorter than a small configurable debounce threshold.
 - transcribe the user's English speech locally with faster-whisper.
 - accept either a plain reply or a command such as `reply to Vasya: meet me at Forge-11`.
 - translate the reply into the target player's last detected language.
 - preserve canonical stalzone terms using the same glossary as inbound translation.
 - show English transcript, target, language, and translated draft before delivery.
 - copy the translated draft to the Windows clipboard automatically after successful translation.
+- show a desktop toast such as `copied Russian reply for Vasya_By`.
 - let the user paste and press Enter manually in the game.
 - never auto-send a low-confidence transcription or ambiguous-recipient reply.
+- on failure, leave the clipboard unchanged and show a clear retry notification.
 
 ### `announcement_formatter`
 
@@ -206,6 +223,8 @@ example target behavior:
 - do not read usernames character-by-character unless pronunciation mode requests it.
 - skip repeated system messages and optionally suppress the user's own messages.
 - preserve message ordering when several lines arrive together.
+- read three consecutive messages as three ordered announcements without dropping or merging them.
+- queue new messages that arrive during an active announcement.
 - collapse excessive punctuation for speech while leaving the displayed translation unchanged.
 
 ### `speech`
@@ -214,6 +233,7 @@ example target behavior:
 - allow mute, volume, voice, rate, and queue-length controls.
 - drop stale messages if speech falls too far behind.
 - interrupt or pause announcements while the user records a reply to prevent microphone feedback.
+- resume queued inbound announcements after reply recording and processing finishes.
 
 ### `ui`
 
@@ -224,6 +244,7 @@ example target behavior:
 - configurable hotkeys and translation/TTS toggles.
 - visible last-speaker target and detected language.
 - reply transcript, translated draft, copy status, and retry/edit controls.
+- small non-blocking clipboard toast that disappears automatically.
 
 ### `storage`
 
@@ -240,8 +261,9 @@ the UI thread must never run OCR, translation, or TTS directly.
 | --- | --- | --- |
 | capture worker | produce the newest cropped frame | capacity 1; replace stale frame |
 | OCR worker | preprocess and recognize text | consume latest frame only |
+| classifier worker | separate inbound players, outbound players, system, and unknown lines | preserve OCR order |
 | translation worker | translate new lines | bounded FIFO |
-| speech worker | read translated messages | bounded FIFO; drop stale items |
+| speech worker | read every translated inbound player message in order | bounded FIFO; never drop normal queued chat |
 | microphone worker | record only during push-to-talk | one active recording |
 | voice recognition worker | transcribe completed recordings | bounded FIFO |
 | reply worker | resolve target and translate outbound text | one draft at a time |
@@ -285,6 +307,7 @@ stalzone-chat-translator/
 │       │   └── reply_controller.py
 │       ├── conversation/
 │       │   ├── context_manager.py
+│       │   ├── message_classifier.py
 │       │   ├── speaker_tracker.py
 │       │   └── announcement.py
 │       ├── speech/
@@ -302,6 +325,7 @@ stalzone-chat-translator/
 │   ├── test_language_detection.py
 │   ├── test_glossary.py
 │   ├── test_translation.py
+│   ├── test_message_classifier.py
 │   ├── test_speaker_tracker.py
 │   ├── test_voice_commands.py
 │   ├── test_reply_controller.py
@@ -353,7 +377,10 @@ stalzone-chat-translator/
     "default_target": "last_inbound_speaker",
     "require_target_confirmation_when_ambiguous": true,
     "auto_send": false,
-    "push_to_talk": "ctrl+shift+r"
+    "hold_to_talk": "v",
+    "minimum_hold_ms": 180,
+    "suppress_key_event": false,
+    "show_clipboard_toast": true
   },
   "speech_recognition": {
     "provider": "faster_whisper",
@@ -369,7 +396,8 @@ stalzone-chat-translator/
   "hotkeys": {
     "toggle_capture": "ctrl+shift+t",
     "toggle_speech": "ctrl+shift+m",
-    "clear_history": "ctrl+shift+l"
+    "clear_history": "ctrl+shift+l",
+    "hold_to_talk": "v"
   }
 }
 ```
@@ -405,19 +433,24 @@ the default `natural_gamer` policy is part of the product contract:
 1. the application watches only the selected stalzone chat region.
 2. a new line appears: `Vasya_By: ты куда идёшь?`.
 3. OCR extracts the speaker and message, then the tracker confirms it is new.
-4. the local translator detects Russian, applies chat context and the game glossary, and produces `where are you going?`.
-5. the window displays the original and translation.
-6. TTS says: `Vasya said: where are you going?`.
+4. the classifier confirms it is an inbound player message rather than a system or outgoing message.
+5. the local translator detects Russian, applies chat context and the game glossary, and produces `where are you going?`.
+6. the window displays the original and translation.
+7. TTS says: `Vasya said: where are you going?`.
+
+when Vasya sends three messages consecutively, all three translations enter the speech queue and play one by one in their original order. no message is merged or silently discarded.
 
 ### outbound voice reply
 
-1. the user holds the reply hotkey and says `reply to Vasya: Forge-11, I need to test my scanner`.
-2. faster-whisper transcribes the speech locally.
-3. the speaker tracker resolves Vasya's last detected language as Russian.
-4. the local translator produces a natural Russian reply while preserving `Forge-11` and `scanner` according to the glossary.
-5. the UI shows the target, English transcript, and Russian draft.
-6. the Russian draft is copied to the clipboard.
-7. the user clicks the intended chat/player, pastes, verifies, and presses Enter.
+1. the user holds `V`; TTS pauses and microphone recording begins immediately.
+2. the user says `Forge-11, I need to test my scanner`.
+3. the user releases `V`; recording ends and faster-whisper transcribes the speech locally.
+4. the speaker tracker uses the most recent inbound player, Vasya, and resolves their last detected language as Russian.
+5. the local translator produces a natural Russian reply while preserving `Forge-11` and `scanner` according to the glossary.
+6. the Russian draft is copied to the clipboard automatically.
+7. a toast says `copied Russian reply for Vasya_By` and the UI retains the English transcript and Russian draft.
+8. the user clicks Vasya's name, pastes, verifies, and presses Enter.
+9. any queued inbound announcements resume.
 
 ## 12. safety and compatibility constraints
 
@@ -430,6 +463,7 @@ the default `natural_gamer` policy is part of the product contract:
 - require an explicit future architecture decision before adding any network-backed provider.
 - never require a paid API for a core feature.
 - never auto-send an ambiguous recipient, low-confidence transcript, or low-confidence translation.
+- do not overwrite the clipboard when transcription, language detection, targeting, or translation fails.
 - do not claim anti-cheat approval without written confirmation from the game publisher. external capture is lower risk, not guaranteed risk-free.
 
 ## 13. milestones
@@ -439,13 +473,14 @@ the default `natural_gamer` policy is part of the product contract:
 | m0 — fixtures | representative chat screenshots plus ground-truth annotations | includes multiple languages, slang, typos, profanity, game terms, names, colors, channels, and noisy backgrounds |
 | m1 — OCR CLI | crop screenshot and print ordered lines | target messages are readable on fixture set |
 | m2 — live detector | capture region and emit only new lines | no repeats while unchanged; repeated messages work later |
-| m3 — language and glossary | detect language and protect canonical terms | mixed Russian/English/Turkish fixtures resolve correctly |
-| m4 — local contextual translation | translate into natural gamer English without network calls | slang, tone, profanity, and game-term rubric passes |
-| m5 — desktop UI | selector, translation window, tray, settings | usable without editing source or JSON |
-| m6 — inbound speech | announce `<player> said: <translation>` | OCR remains responsive and ordering is correct |
-| m7 — voice replies | transcribe, target, translate, preview, and copy | no network calls; ambiguous targets never auto-copy/send |
-| m8 — hardening | tests, logs, scaling, multi-monitor support | passes fixture and manual gameplay tests |
-| m9 — packaging | Windows installer and model setup | clean-machine setup verified with no paid account/API |
+| m3 — classification | separate inbound player, outbound player, system, and unknown lines | system/outbound fixtures remain silent; inbound fixtures are not missed |
+| m4 — language and glossary | detect language and protect canonical terms | mixed Russian/English/Turkish fixtures resolve correctly |
+| m5 — local contextual translation | translate into natural gamer English without network calls | slang, tone, profanity, and game-term rubric passes |
+| m6 — desktop UI | selector, translation window, tray, settings | usable without editing source or JSON |
+| m7 — inbound speech | announce `<player> said: <translation>` | every consecutive player message is spoken in order; system/outbound lines stay silent |
+| m8 — hold-to-talk replies | key-down record, key-up transcribe/translate/copy/toast | no network calls; clipboard unchanged on failure; nothing is auto-sent |
+| m9 — hardening | tests, logs, scaling, multi-monitor support | passes fixture and manual gameplay tests |
+| m10 — packaging | Windows installer and model setup | clean-machine setup verified with no paid account/API |
 
 ## 14. performance targets
 
@@ -467,6 +502,8 @@ the default `natural_gamer` policy is part of the product contract:
 - integration tests with recorded frame sequences that simulate chat scrolling.
 - recorded voice fixtures for commands, plain replies, accents, noise, corrections, and ambiguous names.
 - clipboard tests proving that drafts copy but are never pasted or sent automatically.
+- ordered-queue tests with several consecutive player messages plus interleaved system messages.
+- key-down/key-up tests for hold recording, accidental taps, autorepeat, focus changes, and a key shared with game controls.
 - offline test with outbound networking blocked; every core workflow must still pass.
 - manual tests for fullscreen-windowed mode, DPI scaling, multiple monitors, alt-tab, and game minimization.
 - packaging smoke test on a Windows machine without Python installed.
@@ -481,8 +518,7 @@ these should be resolved with real screenshots and user preference before their 
 4. translation-window position, number of visible lines, font size, and opacity.
 5. whether TTS should read every translated line or only lines matching filters.
 6. whether player names and faction/channel labels use consistent colors that preprocessing can exploit.
-7. preferred reply hotkey and whether a later wake-word mode is worth continuous microphone use.
-8. whether clipboard copy should happen immediately or require one confirmation click after preview.
+7. final hold-to-talk key after checking stalzone's existing bindings; `V` is the current candidate.
 
 ## 17. fixture ingestion
 
@@ -528,3 +564,6 @@ these become the permanent OCR fixture set and determine preprocessing and dedup
 | 2026-08-20 | local LLM plus Argos fallback | local model handles slang/context; Argos supports lower-spec machines |
 | 2026-08-20 | push-to-talk replies | avoids continuous microphone use and makes reply intent explicit |
 | 2026-08-20 | clipboard delivery for v1 | prevents wrong-recipient auto-sends and avoids simulated in-game input |
+| 2026-08-20 | inbound-player-only announcements | system messages and the user's own messages should stay silent |
+| 2026-08-20 | ordered speech queue | every consecutive player message must be read exactly once and in order |
+| 2026-08-20 | hold-to-talk key lifecycle | key-down records; key-up transcribes, translates, copies, and confirms with a toast |
