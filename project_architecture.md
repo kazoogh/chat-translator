@@ -247,12 +247,29 @@ example target behavior:
 ### `game_glossary`
 
 - ship with a versioned stalzone terminology file.
+- load the bundled STALZONE glossary from `data/glossaries/stalzone.v1.json` through the profile manifest rather than hard-coding terms.
 - store canonical English names plus Russian, Turkish, transliterated, abbreviated, and misspelled aliases.
 - cover maps, factions, artifacts, weapons, armor, events, anomalies, currencies, resources, and common community shorthand.
 - prefer official in-game English names when a term has one.
 - protect glossary matches from being mistranslated as ordinary words.
 - allow user corrections from the UI and save them locally.
 - track glossary version separately from the application version.
+- resolve terms from three ordered layers: bundled profile glossary, optional signed community pack, then the user's local learned overlay.
+- never modify bundled files at runtime; application updates can replace them safely while preserving local learning.
+
+### `glossary_learner`
+
+- observe untranslated spans, repeated unknown words, mixed-language game terms, and user corrections after OCR normalization.
+- use the local multilingual translator plus surrounding messages to propose a canonical term, language, aliases, category, and confidence score.
+- accumulate evidence across separate messages and speakers instead of learning from one occurrence.
+- immediately store every proposal in a local candidate database with source language, context hash, first/last seen timestamps, and evidence count.
+- automatically activate only high-confidence aliases that map to an existing canonical game term and pass repetition, OCR-stability, and conflict checks.
+- require confirmation for new canonical meanings, conflicting mappings, profanity that may be ordinary speech, and low-confidence OCR.
+- let users accept, edit, reject, or block candidates from a small `learned terms` screen; rejection prevents repeated prompts for the same evidence.
+- support Turkish and other new languages without a new application release when the installed detector and translation model already support them.
+- keep learned data local by default. future community sharing must be explicit opt-in, anonymized, reviewable, and separate from normal translation.
+- provide export/import of a versioned user glossary overlay so useful terms can later be reviewed for a bundled profile release.
+- never learn usernames, numbers, URLs, one-off insults, or entire sentences as glossary terms.
 
 ### `context_manager`
 
@@ -374,7 +391,8 @@ chat-translator/
 │       ├── language/
 │       │   ├── detector.py
 │       │   ├── mixed_script.py
-│       │   └── glossary.py
+│       │   ├── glossary.py
+│       │   └── glossary_learner.py
 │       ├── profiles/
 │       │   ├── schema.py
 │       │   ├── loader.py
@@ -437,6 +455,12 @@ chat-translator/
 │   └── build_installer.ps1
 ├── installer/
 │   └── chat-translator.iss
+├── data/
+│   ├── README.md
+│   ├── corpora/
+│   │   └── stalzone.translation.v1.jsonl
+│   └── glossaries/
+│       └── stalzone.v1.json
 ├── profiles/
 │   ├── generic.default/
 │   │   ├── profile.json
@@ -685,6 +709,11 @@ when Vasya sends three messages consecutively, all three translations enter the 
 
 ## 15. testing strategy
 
+- treat `data/corpora/stalzone.translation.v1.jsonl` as the initial translation regression corpus, not as executable prompt text or an automatic fine-tuning dataset.
+- split corpus rows deterministically into development and held-out evaluation sets; never tune against the held-out expected translations.
+- validate every corpus row and glossary entry in CI, including required fields, supported language tags, exactly one expected translation direction, and duplicate aliases.
+- test learning thresholds, repeated evidence, alias conflicts, OCR instability, rejection suppression, username exclusion, and bundled/community/local precedence.
+- test a Turkish alias discovered during live chat and reused correctly after restart without changing the bundled STALZONE glossary.
 - unit tests for normalization, grouping, fuzzy matching, cache expiry, settings, and provider fallbacks.
 - golden-image tests using cropped and full-screen chat screenshots.
 - every fixture stores raw OCR ground truth, normalized source, language tags, protected terms, and expected natural translation.
@@ -728,6 +757,13 @@ preferred ingestion order:
 2. keep an unmodified private fixture copy during development.
 3. annotate each fixture with exact source text, language, natural translation, protected terms, and notes.
 4. publish screenshots to the public GitHub repository only after an explicit privacy review; usernames and chat content may be public.
+
+the initial text-only STALZONE assets are versioned separately from screenshots:
+
+- `data/corpora/stalzone.translation.v1.jsonl` contains 211 inbound and outbound examples with natural translations, tone notes, protected terms, and confidence notes.
+- `data/glossaries/stalzone.v1.json` contains 77 canonical terms and their observed aliases.
+- player-name annotations are removed from the public corpus; tests should use synthetic usernames.
+- low-confidence examples remain useful edge cases but must not be treated as authoritative translations without review.
 
 ## 18. immediate next step
 
@@ -778,3 +814,5 @@ after the stalzone profile reaches acceptable accuracy, create one second-game f
 | 2026-08-20 | frozen-screenshot clipping calibration | familiar screenshot-style selection avoids injection and gives deterministic visual feedback |
 | 2026-08-20 | normalized client-relative chat coordinates | saved layouts remain usable when windows move and can adapt to proportional size changes |
 | 2026-08-20 | OCR preview before saving calibration | users can correct a bad region before background monitoring begins |
+| 2026-08-20 | layered live glossary learning | bundled data remains reproducible while the app learns personal aliases and languages locally |
+| 2026-08-20 | evidence-gated automatic activation | repeated high-confidence aliases may activate automatically; new or ambiguous meanings require confirmation to prevent glossary poisoning |

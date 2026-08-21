@@ -1,0 +1,871 @@
+{
+  "metadata": {
+    "source": "reviewed STALZONE game-chat screenshots and translation examples supplied for this project",
+    "notes": "canonical English terms are normalized for natural STALZONE gamer usage; aliases include Russian, transliteration, abbreviations, and observed misspellings."
+  },
+  "terms": [
+    {
+      "canonical_english": "STALZONE",
+      "aliases": [
+        "stalzone",
+        "STALZONE"
+      ],
+      "category": "game",
+      "notes": "game context for all chat examples"
+    },
+    {
+      "canonical_english": "EXBO",
+      "aliases": [
+        "EXBO",
+        "ехбо"
+      ],
+      "category": "developer/publisher",
+      "notes": "used in 'average EXBO lol' joke"
+    },
+    {
+      "canonical_english": "SSPP contracts",
+      "aliases": [
+        "SSPP contracts",
+        "ssp contracts",
+        "контракты ССП",
+        "ССП"
+      ],
+      "category": "activity",
+      "notes": "contract farming source"
+    },
+    {
+      "canonical_english": "farm",
+      "aliases": [
+        "farm",
+        "фарм",
+        "фармить",
+        "пофармлю",
+        "фармлю"
+      ],
+      "category": "activity",
+      "notes": "grind resources/money/artifacts"
+    },
+    {
+      "canonical_english": "free farm",
+      "aliases": [
+        "free farm",
+        "бесплатный фарм"
+      ],
+      "category": "activity/slang",
+      "notes": "taunt meaning farming/killing someone for free value"
+    },
+    {
+      "canonical_english": "middle / center",
+      "aliases": [
+        "middle",
+        "центр",
+        "центра",
+        "центральный"
+      ],
+      "category": "map/location",
+      "notes": "center area of the map/stronghold"
+    },
+    {
+      "canonical_english": "middle stronghold",
+      "aliases": [
+        "middle stronghold",
+        "центральный опорник",
+        "опорник"
+      ],
+      "category": "map/event",
+      "notes": "central stronghold/event area"
+    },
+    {
+      "canonical_english": "artifact",
+      "aliases": [
+        "artifact",
+        "artifacts",
+        "арт",
+        "арты",
+        "артефакт",
+        "артефакты"
+      ],
+      "category": "item",
+      "notes": "often shortened to арты in Russian"
+    },
+    {
+      "canonical_english": "artifact run",
+      "aliases": [
+        "artifact run",
+        "artifact runs",
+        "бегал за артефактами"
+      ],
+      "category": "activity",
+      "notes": "route/run to find artifacts"
+    },
+    {
+      "canonical_english": "artifact set",
+      "aliases": [
+        "artifact set",
+        "сет артефактов",
+        "фиолетовый сет артефактов"
+      ],
+      "category": "build",
+      "notes": "set of artifacts used in container/backpack"
+    },
+    {
+      "canonical_english": "filler artifact",
+      "aliases": [
+        "filler",
+        "fillers",
+        "временная замена",
+        "временные замены"
+      ],
+      "category": "build",
+      "notes": "temporary substitute artifact until final expensive piece"
+    },
+    {
+      "canonical_english": "Raisin",
+      "aliases": [
+        "Raisin",
+        "Raisins",
+        "изюм",
+        "изюмы",
+        "изюмов"
+      ],
+      "category": "artifact",
+      "notes": "expensive speed-build artifact mentioned as needing 3"
+    },
+    {
+      "canonical_english": "Whirlwind",
+      "aliases": [
+        "Whirlwind",
+        "вихрь",
+        "фиол вихрь",
+        "фиолетовый вихрь"
+      ],
+      "category": "artifact",
+      "notes": "artifact purchase target"
+    },
+    {
+      "canonical_english": "Prism",
+      "aliases": [
+        "Prism",
+        "призма",
+        "призму",
+        "зелёная призма",
+        "синенькая призма"
+      ],
+      "category": "artifact",
+      "notes": "green/blue Prism examples"
+    },
+    {
+      "canonical_english": "Ice Hedgehog",
+      "aliases": [
+        "Ice Hedgehog",
+        "ледяной ёж",
+        "айс хеджхог"
+      ],
+      "category": "artifact",
+      "notes": "linked item example"
+    },
+    {
+      "canonical_english": "Prima",
+      "aliases": [
+        "Prima",
+        "прима"
+      ],
+      "category": "artifact",
+      "notes": "linked item example"
+    },
+    {
+      "canonical_english": "Acid Crystal",
+      "aliases": [
+        "Acid Crystal",
+        "кислотный кристалл"
+      ],
+      "category": "artifact/item",
+      "notes": "given/taken in chat"
+    },
+    {
+      "canonical_english": "Protoartifact",
+      "aliases": [
+        "Protoartifact",
+        "протоартефакт"
+      ],
+      "category": "item",
+      "notes": "pink rarity/color example"
+    },
+    {
+      "canonical_english": "Punisher",
+      "aliases": [
+        "Punisher",
+        "Каратель",
+        "карателя",
+        "Punisher Exoarmor"
+      ],
+      "category": "armor",
+      "notes": "target exoarmor craft"
+    },
+    {
+      "canonical_english": "Barrel",
+      "aliases": [
+        "Barrel",
+        "баррель"
+      ],
+      "category": "container/backpack",
+      "notes": "container goal paired with Punisher"
+    },
+    {
+      "canonical_english": "Chitin backpack",
+      "aliases": [
+        "Chitin",
+        "хитин",
+        "рюкзак Chitin",
+        "Chitin backpack"
+      ],
+      "category": "backpack/container",
+      "notes": "expensive long-term backpack; parts cost 1000 tickets each in chat"
+    },
+    {
+      "canonical_english": "Chitin backpack part",
+      "aliases": [
+        "часть на рюкзак Chitin",
+        "часть",
+        "деталь",
+        "parts"
+      ],
+      "category": "component",
+      "notes": "requires 6–8 parts in conversation"
+    },
+    {
+      "canonical_english": "Pouch Black Eagle B-33",
+      "aliases": [
+        "Pouch Black Eagle B-33",
+        "Black Eagle B-33"
+      ],
+      "category": "container",
+      "notes": "shown as Vasya's container"
+    },
+    {
+      "canonical_english": "science suit",
+      "aliases": [
+        "science suit",
+        "научка",
+        "научках",
+        "научный костюм"
+      ],
+      "category": "armor",
+      "notes": "needed for Labyrinth and center access context"
+    },
+    {
+      "canonical_english": "Veteran lobby",
+      "aliases": [
+        "Veteran lobby",
+        "ветеранское лобби",
+        "ветеранских лобби"
+      ],
+      "category": "matchmaking",
+      "notes": "lobby tier where science suits are risky"
+    },
+    {
+      "canonical_english": "Master gear",
+      "aliases": [
+        "Master gear",
+        "мастерские вещи",
+        "мастерки"
+      ],
+      "category": "gear tier",
+      "notes": "higher-tier gear that can trap player in high-level lobby"
+    },
+    {
+      "canonical_english": "purple item/artifact",
+      "aliases": [
+        "purple",
+        "фиолетовый",
+        "фиол",
+        "фиолки",
+        "розовый"
+      ],
+      "category": "rarity",
+      "notes": "фиол/фиолки are common shorthand; one screenshot used pink/розовый for Protoartifact"
+    },
+    {
+      "canonical_english": "blue item/artifact",
+      "aliases": [
+        "blue",
+        "синий",
+        "синенький",
+        "синенькую"
+      ],
+      "category": "rarity",
+      "notes": "blue tier/rarity"
+    },
+    {
+      "canonical_english": "green item/artifact",
+      "aliases": [
+        "green",
+        "зелёный",
+        "зелёная"
+      ],
+      "category": "rarity",
+      "notes": "green tier/rarity"
+    },
+    {
+      "canonical_english": "red item/detector",
+      "aliases": [
+        "red",
+        "красный"
+      ],
+      "category": "rarity",
+      "notes": "red tier; Elbrus detector context"
+    },
+    {
+      "canonical_english": "Elbrus Short Range Detector",
+      "aliases": [
+        "Elbrus",
+        "Эльбрус",
+        "эльбрус",
+        "Elbrus Short Range Detector"
+      ],
+      "category": "detector",
+      "notes": "red detector, crate-only/auction expensive in chat"
+    },
+    {
+      "canonical_english": "Pioneer",
+      "aliases": [
+        "Pioneer",
+        "Пионер",
+        "пионер"
+      ],
+      "category": "detector",
+      "notes": "detector alternative mentioned"
+    },
+    {
+      "canonical_english": "detector",
+      "aliases": [
+        "detector",
+        "detectors",
+        "детектор",
+        "детекторы"
+      ],
+      "category": "tool",
+      "notes": "artifact detector/scanner"
+    },
+    {
+      "canonical_english": "artifact scanner",
+      "aliases": [
+        "artifact scanner",
+        "сканер артефактов",
+        "сканеры артефактов",
+        "артефактов"
+      ],
+      "category": "tool",
+      "notes": "detector type clarified by Vasya"
+    },
+    {
+      "canonical_english": "scanner battery died",
+      "aliases": [
+        "сканер сел",
+        "сканер сдох",
+        "scanner died"
+      ],
+      "category": "status",
+      "notes": "сел = ran out of charge"
+    },
+    {
+      "canonical_english": "wide range",
+      "aliases": [
+        "wide range",
+        "широкий радиус",
+        "радиус"
+      ],
+      "category": "detector/stat",
+      "notes": "clarification term for detector range"
+    },
+    {
+      "canonical_english": "charging station",
+      "aliases": [
+        "charging station",
+        "зарядная станция",
+        "зарядкой"
+      ],
+      "category": "location/tool",
+      "notes": "NPC near charging station crafts blue/purple detectors"
+    },
+    {
+      "canonical_english": "auction",
+      "aliases": [
+        "auction",
+        "аукцион",
+        "с аукциона"
+      ],
+      "category": "market",
+      "notes": "buying detectors/items"
+    },
+    {
+      "canonical_english": "market",
+      "aliases": [
+        "market",
+        "рынок",
+        "на рынке"
+      ],
+      "category": "market",
+      "notes": "pass costs 4kk on market"
+    },
+    {
+      "canonical_english": "kk / million",
+      "aliases": [
+        "кк",
+        "kk",
+        "лям",
+        "лямов",
+        "мил",
+        "mil",
+        "m"
+      ],
+      "category": "currency slang",
+      "notes": "1кк = 1 million"
+    },
+    {
+      "canonical_english": "k / thousand",
+      "aliases": [
+        "к",
+        "k",
+        "тыща",
+        "тысяч"
+      ],
+      "category": "currency slang",
+      "notes": "1к = 1,000; 500к = 500,000"
+    },
+    {
+      "canonical_english": "Quantum Battery",
+      "aliases": [
+        "Quantum Battery",
+        "квантовая батарея",
+        "квантовые батареи"
+      ],
+      "category": "resource",
+      "notes": "Punisher/material objective"
+    },
+    {
+      "canonical_english": "Gamma Data Fragment",
+      "aliases": [
+        "Gamma Data Fragment",
+        "Gamma Data Fragments",
+        "гамма-фрагменты",
+        "гамму",
+        "фрагменты данных"
+      ],
+      "category": "resource",
+      "notes": "resource farmed at Black Detour / Forge-11"
+    },
+    {
+      "canonical_english": "Psy-Tracker Remains",
+      "aliases": [
+        "Psy-Tracker Remains",
+        "останки пси-трекеров",
+        "пси-трекеры",
+        "psy-trackers"
+      ],
+      "category": "resource",
+      "notes": "resource for Punisher"
+    },
+    {
+      "canonical_english": "Black Detour",
+      "aliases": [
+        "Black Detour",
+        "Чёрный обход",
+        "черный обход",
+        "объезд",
+        "обвод"
+      ],
+      "category": "map",
+      "notes": "map/location used for gamma fragments and psy-trackers; 'объезд/обвод' were inferred from context"
+    },
+    {
+      "canonical_english": "Forge-11",
+      "aliases": [
+        "Forge-11",
+        "Forge11",
+        "Кузня-11",
+        "Кузня",
+        "кузня"
+      ],
+      "category": "map",
+      "notes": "map/farm location; Artifact Hunters respawn there"
+    },
+    {
+      "canonical_english": "Labyrinth",
+      "aliases": [
+        "Labyrinth",
+        "labryinth",
+        "Лабиринт"
+      ],
+      "category": "map",
+      "notes": "requires science suit in conversation"
+    },
+    {
+      "canonical_english": "RLS / Radar",
+      "aliases": [
+        "RLS",
+        "РЛС",
+        "рлс",
+        "Radar",
+        "радар"
+      ],
+      "category": "location/acronym",
+      "notes": "рлс literally radar station; exact STALZONE quest/location context uncertain"
+    },
+    {
+      "canonical_english": "Artifact Hunter",
+      "aliases": [
+        "Artifact Hunter",
+        "Artifact Hunters",
+        "охотники за артефактами",
+        "arthunters"
+      ],
+      "category": "enemy/event",
+      "notes": "respawn-gated source in Forge-11"
+    },
+    {
+      "canonical_english": "event",
+      "aliases": [
+        "event",
+        "events",
+        "ивент",
+        "ивенты"
+      ],
+      "category": "activity",
+      "notes": "map events that reward resources"
+    },
+    {
+      "canonical_english": "eruption",
+      "aliases": [
+        "eruption",
+        "выброс",
+        "выброса"
+      ],
+      "category": "world event",
+      "notes": "players wait for it; PvP/artifact activity"
+    },
+    {
+      "canonical_english": "Covenant",
+      "aliases": [
+        "Covenant",
+        "ковенант",
+        "ковенанты",
+        "ковенантов"
+      ],
+      "category": "faction",
+      "notes": "enemy duo example"
+    },
+    {
+      "canonical_english": "Mercenary Camp",
+      "aliases": [
+        "Mercenary Camp",
+        "Mercenary Camp #21"
+      ],
+      "category": "location",
+      "notes": "visible UI location in screenshot"
+    },
+    {
+      "canonical_english": "ACT tickets/coupons",
+      "aliases": [
+        "ACT",
+        "АКТ",
+        "акта",
+        "талоны",
+        "купоны",
+        "tickets",
+        "coupons"
+      ],
+      "category": "currency",
+      "notes": "used for sight, McMillan parts, knives, armor/backpack parts"
+    },
+    {
+      "canonical_english": "battle pass",
+      "aliases": [
+        "battle pass",
+        "battlepass",
+        "батлпасс",
+        "батлпассе",
+        "пропуск"
+      ],
+      "category": "progression",
+      "notes": "level 400 and market/pass discussion"
+    },
+    {
+      "canonical_english": "butterfly knife",
+      "aliases": [
+        "butterfly knife",
+        "бабочка",
+        "нож-бабочка"
+      ],
+      "category": "cosmetic/weapon",
+      "notes": "ACT purchase option"
+    },
+    {
+      "canonical_english": "knife",
+      "aliases": [
+        "knife",
+        "нож"
+      ],
+      "category": "weapon/cosmetic",
+      "notes": "purchase option"
+    },
+    {
+      "canonical_english": "sight",
+      "aliases": [
+        "sight",
+        "прицел"
+      ],
+      "category": "weapon attachment",
+      "notes": "bought with first 500 tickets"
+    },
+    {
+      "canonical_english": "McMillan",
+      "aliases": [
+        "McMillan",
+        "мкмиллан",
+        "макмиллан"
+      ],
+      "category": "weapon",
+      "notes": "crate weapon/parts"
+    },
+    {
+      "canonical_english": "MG3",
+      "aliases": [
+        "MG3",
+        "мг3"
+      ],
+      "category": "weapon",
+      "notes": "wanted for scary sound"
+    },
+    {
+      "canonical_english": "Hoplite",
+      "aliases": [
+        "Hoplite",
+        "Гоплит",
+        "гоплит"
+      ],
+      "category": "armor/gear",
+      "notes": "mentioned then corrected to Legionnaire"
+    },
+    {
+      "canonical_english": "Legionnaire",
+      "aliases": [
+        "Legionnaire",
+        "Легионер",
+        "легионер",
+        "легионера"
+      ],
+      "category": "armor/gear",
+      "notes": "gear craft target; corrected from Hoplite"
+    },
+    {
+      "canonical_english": "Centurion",
+      "aliases": [
+        "Centurion",
+        "центурион",
+        "центу"
+      ],
+      "category": "armor/gear",
+      "notes": "mentioned as crafting, then clarified as Legionnaire"
+    },
+    {
+      "canonical_english": "injector",
+      "aliases": [
+        "injector",
+        "injectors",
+        "инъектор",
+        "инъекторы"
+      ],
+      "category": "consumable",
+      "notes": "forgotten by Vasya"
+    },
+    {
+      "canonical_english": "beacon",
+      "aliases": [
+        "beacon",
+        "beacons",
+        "маячок",
+        "маячки"
+      ],
+      "category": "collectible/resource",
+      "notes": "Vasya complained about collecting them"
+    },
+    {
+      "canonical_english": "route",
+      "aliases": [
+        "route",
+        "маршрут"
+      ],
+      "category": "pathing",
+      "notes": "artifact/farm route; Vasya said he runs randomly"
+    },
+    {
+      "canonical_english": "party",
+      "aliases": [
+        "party",
+        "пати"
+      ],
+      "category": "group",
+      "notes": "grouped/in-party context"
+    },
+    {
+      "canonical_english": "Tab-link",
+      "aliases": [
+        "Tab-link",
+        "табать",
+        "табаешь",
+        "линкуется",
+        "вставить название предмета"
+      ],
+      "category": "chat mechanic",
+      "notes": "link item/weapon/container names from inventory with Tab"
+    },
+    {
+      "canonical_english": "inventory",
+      "aliases": [
+        "inventory",
+        "инвентарь"
+      ],
+      "category": "UI",
+      "notes": "opened with Tab in explanation"
+    },
+    {
+      "canonical_english": "safe zone",
+      "aliases": [
+        "safe zone",
+        "безопасная зона"
+      ],
+      "category": "UI/location",
+      "notes": "visible in screenshot"
+    },
+    {
+      "canonical_english": "body / corpse",
+      "aliases": [
+        "body",
+        "corpse",
+        "труп",
+        "трупе"
+      ],
+      "category": "loot/PvP",
+      "notes": "loot left on dead player's body"
+    },
+    {
+      "canonical_english": "loot",
+      "aliases": [
+        "loot",
+        "лут",
+        "лутать",
+        "лутают",
+        "улов"
+      ],
+      "category": "item/action",
+      "notes": "loot/catch/haul; улов for found artifacts"
+    },
+    {
+      "canonical_english": "PvP / fight",
+      "aliases": [
+        "PvP",
+        "пвп",
+        "пздиться",
+        "пиздиться",
+        "драться",
+        "дрался",
+        "людей искать"
+      ],
+      "category": "combat",
+      "notes": "пздиться is censored/misspelled profanity for fighting"
+    },
+    {
+      "canonical_english": "PK / player kill",
+      "aliases": [
+        "PK",
+        "PKing",
+        "пк",
+        "пкашишь"
+      ],
+      "category": "combat/slang",
+      "notes": "hostile accusation in first screenshot"
+    },
+    {
+      "canonical_english": "AFK",
+      "aliases": [
+        "AFK",
+        "афк"
+      ],
+      "category": "chat/status",
+      "notes": "away from keyboard"
+    },
+    {
+      "canonical_english": "GG",
+      "aliases": [
+        "GG",
+        "gg",
+        "гг"
+      ],
+      "category": "chat",
+      "notes": "good game"
+    },
+    {
+      "canonical_english": "XD / xD",
+      "aliases": [
+        "xd",
+        "xD",
+        "XDD"
+      ],
+      "category": "tone/emote",
+      "notes": "kept as-is in translations"
+    }
+  ],
+  "slang_and_profanity_notes": [
+    {
+      "source": "чо",
+      "meaning": "colloquial что: what/why",
+      "notes": "casual, not formal"
+    },
+    {
+      "source": "шаришь",
+      "meaning": "do you understand / are you knowledgeable about",
+      "notes": "common slang"
+    },
+    {
+      "source": "заебался",
+      "meaning": "tired as hell / fed up",
+      "notes": "profane"
+    },
+    {
+      "source": "ебаные",
+      "meaning": "fucking",
+      "notes": "profane adjective"
+    },
+    {
+      "source": "нихуя себе",
+      "meaning": "holy fuck / no way",
+      "notes": "profane surprise"
+    },
+    {
+      "source": "не парься",
+      "meaning": "don’t worry / no stress",
+      "notes": "casual"
+    },
+    {
+      "source": "капец",
+      "meaning": "damn / wow / that’s rough",
+      "notes": "mild slang"
+    },
+    {
+      "source": "фиол / фиолки",
+      "meaning": "purple item(s)",
+      "notes": "rarity shorthand"
+    },
+    {
+      "source": "кк",
+      "meaning": "million",
+      "notes": "1кк = 1,000,000"
+    },
+    {
+      "source": "лям",
+      "meaning": "million",
+      "notes": "money slang"
+    }
+  ]
+}
