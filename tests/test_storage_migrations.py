@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from threading import Thread
 from uuid import UUID
 
 from game_chat_translator.models import ChatRegion
@@ -25,6 +26,7 @@ def test_migrations_are_repeatable_and_enable_required_pragmas(tmp_path: Path) -
 def test_calibration_repository_round_trip(tmp_path: Path) -> None:
     with Database(tmp_path / "state.sqlite3") as database:
         repository = SqliteStateRepository(database)
+        assert not repository.has_calibration("stalzone.default")
         region = ChatRegion(
             x=0.01,
             y=0.75,
@@ -37,6 +39,7 @@ def test_calibration_repository_round_trip(tmp_path: Path) -> None:
         )
         calibration_id = repository.save_calibration("stalzone.default", "monitor-1", region, 1.0)
         assert isinstance(calibration_id, UUID)
+        assert repository.has_calibration("stalzone.default")
         assert repository.get_calibration(calibration_id) == region
         assert (
             repository.find_calibration(
@@ -58,3 +61,26 @@ def test_transaction_rolls_back_on_error(tmp_path: Path) -> None:
         except RuntimeError:
             pass
         assert database.open().execute("SELECT COUNT(*) FROM profile_overrides").fetchone()[0] == 0
+
+
+def test_transactions_are_serialized_across_worker_threads(tmp_path: Path) -> None:
+    with Database(tmp_path / "state.sqlite3") as database:
+        failures: list[Exception] = []
+
+        def write(index: int) -> None:
+            try:
+                with database.transaction() as connection:
+                    connection.execute(
+                        "INSERT INTO profile_overrides VALUES (?, ?, ?, ?)",
+                        (f"profile-{index}", 1, "{}", "now"),
+                    )
+            except Exception as exc:
+                failures.append(exc)
+
+        workers = [Thread(target=write, args=(index,)) for index in range(8)]
+        for worker in workers:
+            worker.start()
+        for worker in workers:
+            worker.join(2)
+        assert failures == []
+        assert database.open().execute("SELECT COUNT(*) FROM profile_overrides").fetchone()[0] == 8

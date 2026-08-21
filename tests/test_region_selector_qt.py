@@ -107,3 +107,44 @@ def test_selector_ignores_out_of_order_preview_completion(
 
     buttons = {button.text(): button for button in selector.findChildren(QPushButton)}
     buttons["Cancel"].click()
+
+
+def test_selector_waits_for_async_calibration_commit_and_handles_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication, QMessageBox, QPushButton
+
+    application = QApplication.instance() or QApplication([])
+    calibration = session([])
+    calibration.set_preview_result(has_likely_text=True)
+    completions: list[Callable[[bool], None]] = []
+    committed: list[object] = []
+    warnings: list[str] = []
+    monkeypatch.setattr(
+        QMessageBox,
+        "warning",
+        lambda _parent, _title, message: warnings.append(str(message)),
+    )
+
+    def save(region: object, done: Callable[[bool], None]) -> None:
+        committed.append(region)
+        completions.append(done)
+
+    finished: list[bool] = []
+    launch_region_selector(calibration, request_save=save, on_finished=finished.append)
+    selector = next(widget for widget in application.topLevelWidgets() if widget.isVisible())
+    buttons = {button.text(): button for button in selector.findChildren(QPushButton)}
+    buttons["Save"].click()
+    assert not calibration.saved
+    completions.pop()(False)
+    application.processEvents()
+    assert not calibration.saved
+    assert warnings == ["Calibration storage is temporarily unavailable."]
+
+    buttons["Save"].click()
+    completions.pop()(True)
+    application.processEvents()
+    assert calibration.saved
+    assert finished == [True]
+    assert len(committed) == 2

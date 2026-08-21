@@ -11,6 +11,7 @@ from game_chat_translator.detection.region_calibrator import (
     CalibrationViewport,
     ResizeHandle,
 )
+from game_chat_translator.models import ChatRegion
 
 
 class RegionSelectorUnavailable(RuntimeError):
@@ -21,9 +22,12 @@ def launch_region_selector(
     session: CalibrationSession,
     *,
     retry_capture: Callable[[], bytes] | None = None,
+    request_retry: Callable[[Callable[[bytes | None], None]], None] | None = None,
     request_preview: (
         Callable[[RawFrame, Callable[[bool, tuple[str, ...]], None]], None] | None
     ) = None,
+    request_save: Callable[[ChatRegion, Callable[[bool], None]], None] | None = None,
+    on_finished: Callable[[bool], None] | None = None,
 ) -> int:
     """Launch the frozen-screenshot clipping UI with a memory-only preview."""
     try:
@@ -61,6 +65,8 @@ def launch_region_selector(
     class RegionSelector(QWidget):  # type: ignore[misc]
         HANDLE_RADIUS = 8
         preview_ready = Signal(int, bool, object)
+        retry_ready = Signal(int, object)
+        save_ready = Signal(int, bool)
 
         def __init__(self) -> None:
             super().__init__()
@@ -76,7 +82,13 @@ def launch_region_selector(
             self._handle: ResizeHandle | None = None
             self._last_point = QPoint()
             self._preview_generation = 0
+            self._retry_generation = 0
+            self._finished_reported = False
+            self._save_generation = 0
+            self._save_in_progress = False
             self.preview_ready.connect(self._apply_preview)
+            self.retry_ready.connect(self._apply_retry)
+            self.save_ready.connect(self._apply_save)
             self._create_buttons()
             if session.selection is not None:
                 QTimer.singleShot(0, self._request_preview)
@@ -102,7 +114,7 @@ def launch_region_selector(
                 button = QPushButton(label, self)
                 button.setGeometry(left, 102 + index * 38, width, 30)
                 button.clicked.connect(callback)
-                if label == "Retry Screenshot" and retry_capture is None:
+                if label == "Retry Screenshot" and retry_capture is None and request_retry is None:
                     button.setEnabled(False)
 
         def paintEvent(self, _: Any) -> None:
@@ -226,8 +238,11 @@ def launch_region_selector(
                 self.update()
 
         def _save(self) -> None:
+            if self._save_in_progress:
+                return
+            confirm_no_text = False
             try:
-                session.save()
+                region = session.prepare_save()
             except CalibrationError as exc:
                 if session.preview_has_likely_text is False and session.selection is not None:
                     answer = QMessageBox.question(
@@ -236,12 +251,54 @@ def launch_region_selector(
                         "Save this region anyway?",
                     )
                     if answer == QMessageBox.StandardButton.Yes:
-                        session.save(confirm_no_text=True)
-                        self._invalidate_preview()
-                        self.close()
+                        confirm_no_text = True
+                        try:
+                            region = session.prepare_save(confirm_no_text=True)
+                        except CalibrationError as confirmed_error:
+                            QMessageBox.warning(self, "Cannot save selection", str(confirmed_error))
+                            return
+                    else:
                         return
-                QMessageBox.warning(self, "Cannot save selection", str(exc))
+                else:
+                    QMessageBox.warning(self, "Cannot save selection", str(exc))
+                    return
+            if request_save is None:
+                try:
+                    session.save(confirm_no_text=confirm_no_text)
+                except CalibrationError as exc:
+                    QMessageBox.warning(self, "Cannot save selection", str(exc))
+                    return
+                self._invalidate_preview()
+                self.close()
                 return
+            self._save_in_progress = True
+            self._save_generation += 1
+            generation = self._save_generation
+            try:
+                request_save(
+                    region,
+                    lambda success: self.save_ready.emit(generation, success),
+                )
+            except (OSError, RuntimeError, TypeError, ValueError):
+                self._save_in_progress = False
+                QMessageBox.warning(
+                    self,
+                    "Could not save selection",
+                    "Calibration storage is temporarily unavailable.",
+                )
+
+        def _apply_save(self, generation: int, success: bool) -> None:
+            if generation != self._save_generation or session.saved or session.cancelled:
+                return
+            self._save_in_progress = False
+            if not success:
+                QMessageBox.warning(
+                    self,
+                    "Could not save selection",
+                    "Calibration storage is temporarily unavailable.",
+                )
+                return
+            session.complete_save()
             self._invalidate_preview()
             self.close()
 
@@ -251,15 +308,45 @@ def launch_region_selector(
             self.update()
 
         def _retry(self) -> None:
-            if retry_capture is None:
+            if retry_capture is None and request_retry is None:
+                return
+            if request_retry is not None:
+                self._retry_generation += 1
+                retry_generation = self._retry_generation
+                request_retry(
+                    lambda replacement: self.retry_ready.emit(retry_generation, replacement)
+                )
                 return
             try:
+                assert retry_capture is not None
                 replacement = retry_capture()
                 self._invalidate_preview()
                 session.retry(replacement)
                 self._image = self._new_image()
             except (CalibrationError, OSError, RuntimeError) as exc:
                 QMessageBox.warning(self, "Could not retry screenshot", str(exc))
+            self.update()
+
+        def _apply_retry(self, generation: int, replacement: object) -> None:
+            if generation != self._retry_generation or session.saved or session.cancelled:
+                return
+            if not isinstance(replacement, bytes):
+                QMessageBox.warning(
+                    self,
+                    "Could not retry screenshot",
+                    "The game client could not be captured safely.",
+                )
+                return
+            try:
+                self._invalidate_preview()
+                session.retry(replacement)
+                self._image = self._new_image()
+            except (CalibrationError, OSError, RuntimeError):
+                QMessageBox.warning(
+                    self,
+                    "Could not retry screenshot",
+                    "The replacement screenshot was invalid.",
+                )
             self.update()
 
         def _cancel(self) -> None:
@@ -308,9 +395,18 @@ def launch_region_selector(
 
         def closeEvent(self, event: Any) -> None:
             self._invalidate_preview()
+            self._retry_generation += 1
+            self._save_generation += 1
             if not session.saved and not session.cancelled:
                 with suppress(CalibrationError):
                     session.cancel()
+            if not self._finished_reported and on_finished is not None:
+                self._finished_reported = True
+                on_finished(session.saved)
+            self._image = QImage()
+            selectors = getattr(application, "_gct_region_selectors", [])
+            with suppress(ValueError):
+                selectors.remove(self)
             event.accept()
 
         def _inside_selection(self, point: QPoint) -> bool:

@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 from collections import OrderedDict
 from contextlib import suppress
+from threading import Lock
 
 from game_chat_translator.models import TranslationResult
 from game_chat_translator.translation.base import (
@@ -40,6 +41,7 @@ class TranslationRouter:
         self._maximum_attempts = maximum_attempts
         self._cache_size = cache_size
         self._cache: OrderedDict[str, TranslationOutcome] = OrderedDict()
+        self._cache_lock = Lock()
         self._closed = False
 
     def translate(
@@ -48,10 +50,11 @@ class TranslationRouter:
         if cancellation is not None and cancellation.cancelled:
             raise TranslationCancelled("translation was cancelled")
         key = _cache_key(request)
-        cached = self._cache.get(key)
-        if cached is not None:
-            self._cache.move_to_end(key)
-            return cached
+        with self._cache_lock:
+            cached = self._cache.get(key)
+            if cached is not None:
+                self._cache.move_to_end(key)
+                return cached
 
         failures: list[str] = []
         total_attempts = 0
@@ -113,7 +116,10 @@ class TranslationRouter:
                 seen.add(id(provider))
                 with suppress(Exception):
                     provider.close()
-        self._cache.clear()
+
+    def clear_cache(self) -> None:
+        with self._cache_lock:
+            self._cache.clear()
 
     def _original(
         self, request: TranslationRequest, error_code: str, attempts: int = 1
@@ -129,10 +135,11 @@ class TranslationRouter:
         return TranslationOutcome(result, error_code, True, attempts)
 
     def _remember(self, key: str, outcome: TranslationOutcome) -> None:
-        self._cache[key] = outcome
-        self._cache.move_to_end(key)
-        while len(self._cache) > self._cache_size:
-            self._cache.popitem(last=False)
+        with self._cache_lock:
+            self._cache[key] = outcome
+            self._cache.move_to_end(key)
+            while len(self._cache) > self._cache_size:
+                self._cache.popitem(last=False)
 
 
 def _cache_key(request: TranslationRequest) -> str:

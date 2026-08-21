@@ -929,5 +929,8 @@ also collect a smaller Minecraft Java fixture set. screenshots improve OCR tunin
 | 2026-08-20 | checksummed manual updates before self-update | avoids unsafe silent replacement and does not imply paid code signing is already available |
 | 2026-08-20 | build-ready typed runtime contracts | implementation slices share stable events, lifecycle states, fallbacks, and ownership rules |
 | 2026-08-20 | pause during profile-switch debounce | a new foreground candidate must never be captured with the prior game's calibration |
+| 2026-08-21 | finite opt-in history retention | persisted chat history requires an explicit 1–365 day expiry; zero continues to mean persistence is disabled |
+| 2026-08-21 | worker-owned SAPI and serialized storage | COM speech, history writes, geometry writes, model actions, and diagnostics never execute on the Qt UI thread |
+| 2026-08-21 | global hotkeys remain Slice 6 | Slice 5 displays configured shortcuts; key observation begins with the hold-to-talk implementation so no partial hook lifecycle ships |
 | 2026-08-20 | stable Windows display device names | persisted calibration keys use display device identity rather than transient monitor handles |
 | 2026-08-20 | bounded proportional calibration reuse | major aspect-ratio, size, or DPI changes require recalibration instead of silently reusing stale geometry |

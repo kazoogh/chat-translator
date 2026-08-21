@@ -4,7 +4,7 @@ status: ready to execute
 target: Windows 10/11 x64  
 delivery strategy: small vertical pull requests with tests and runnable checkpoints
 
-implementation status: slices 0–4 completed through 2026-08-21; slices 5–7 remain in progress.
+implementation status: slices 0–5 completed through 2026-08-21; slices 6–7 remain in progress.
 Portable gates and optional native-provider jobs target Python 3.12 on Windows/Linux CI. Real-game
 OCR/classification evidence and real-model translation-quality acceptance remain explicitly
 provisional until the privacy-reviewed fixtures and downloaded models documented by each slice are

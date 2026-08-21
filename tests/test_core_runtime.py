@@ -6,6 +6,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from uuid import uuid4
 
+import pytest
+
 from game_chat_translator.core_runtime import CoreRuntime
 from game_chat_translator.runtime.queues import OfferResult
 from game_chat_translator.translation import TranslationJob, TranslationRequestBuilder
@@ -156,3 +158,39 @@ def test_model_remains_in_use_until_every_pipeline_releases_it(tmp_path: Path) -
         assert (tmp_path / "models" / "fixture-model.bin").is_file()
         runtime.release_pipeline(second)
         assert runtime.remove_model("fixture-model").code == "REMOVED"
+
+
+def test_compute_can_stop_before_storage_for_desktop_shutdown_order(tmp_path: Path) -> None:
+    payload = b"healthy-fixture-model"
+    runtime = CoreRuntime(
+        resource_root=_resource_root(tmp_path, payload),
+        state_path=tmp_path / "state.sqlite3",
+        model_root=tmp_path / "models",
+        source=_Source(payload),
+        model_health_check=lambda _entry, _path: True,
+        contextual_factory=lambda _entry, _path: _Provider(),
+        lightweight_factory=lambda: _Provider(),
+    )
+    history = runtime.history_repository()
+    runtime.close_compute()
+    assert history.purge_expired() == 0
+    runtime.close_storage()
+    with pytest.raises(RuntimeError, match="not open"):
+        history.purge_expired()
+    runtime.close()
+
+
+def test_calibration_advances_every_live_translation_layout_generation(tmp_path: Path) -> None:
+    payload = b"healthy-fixture-model"
+    with CoreRuntime(
+        resource_root=_resource_root(tmp_path, payload),
+        state_path=tmp_path / "state.sqlite3",
+        model_root=tmp_path / "models",
+        source=_Source(payload),
+        model_health_check=lambda _entry, _path: True,
+        lightweight_factory=lambda: _Provider(),
+    ) as runtime:
+        first = runtime.build_translation_pipeline(initial_generations=(1, 3, 1, 1, 1, 1))
+        second = runtime.build_translation_pipeline(initial_generations=(1, 3, 1, 1, 1, 1))
+        assert runtime.advance_layout_generation() == 4
+        assert first.generations[1] == second.generations[1] == 4

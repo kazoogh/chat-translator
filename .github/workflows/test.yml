@@ -38,10 +38,10 @@ jobs:
       - run: uv run ruff check .
       - run: uv run mypy
       - run: uv run gct-validate .
-      - run: uv run pytest -m "not language and not windows_ui and not vision and not translation_native"
+      - run: uv run pytest -m "not language and not speech_native and not windows_ui and not vision and not translation_native"
 
   windows-packaging-smoke:
-    needs: [portable, windows-ui, windows-vision, windows-translation]
+    needs: [portable, windows-ui, windows-vision, windows-translation, windows-runtime-integration]
     runs-on: windows-latest
     env:
       PYTHONUTF8: '1'
@@ -71,9 +71,9 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - run: uv sync --frozen --extra dev --extra capture --extra ui
+      - run: uv sync --frozen --extra dev --extra capture --extra ui --extra windows
       - run: uv run mypy
-      - run: uv run pytest -m windows_ui
+      - run: uv run pytest -m "windows_ui or speech_native"
 
   windows-vision:
     needs: portable
@@ -115,3 +115,26 @@ jobs:
       - run: uv sync --frozen --extra dev --extra translation
       - name: Verify pinned local translation runtimes import on Windows
         run: uv run pytest -m translation_native
+
+  windows-runtime-integration:
+    needs: portable
+    runs-on: windows-latest
+    env:
+      PYTHONUTF8: '1'
+      PYTHONIOENCODING: utf-8
+      QT_QPA_PLATFORM: offscreen
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: '0.8.11'
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: uv sync --frozen --extra dev --extra ui --extra windows --extra capture --extra vision --extra language --extra translation
+      - name: Verify the combined desktop runtime and native namespaces
+        run: uv run python -c "import cv2, fasttext, importlib.metadata as m, numpy, paddle, paddleocr, pythoncom, win32com.client; from PySide6 import QtCore, QtWidgets; owners=[d.metadata['Name'].lower() for d in m.distributions() if d.metadata['Name'].lower().startswith('opencv')]; assert owners == ['opencv-contrib-python'], owners; print(cv2.__version__, numpy.__version__, paddle.__version__, paddleocr.__version__, QtCore.__version__)"
+      - name: Exercise production monitoring composition and desktop shell
+        run: uv run pytest tests/test_desktop_services.py tests/test_application_pipeline.py tests/test_monitoring.py tests/test_ocr_model_setup.py tests/test_slice5_qt_views.py

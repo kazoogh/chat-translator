@@ -51,9 +51,12 @@ def test_move_resize_nudge_clamp_and_save_normalized() -> None:
     assert session.move(-100, 100) == PixelRect(0, 40, 50, 40)
     assert session.resize(ResizeHandle.TOP_RIGHT, 20, -20) == PixelRect(0, 20, 70, 60)
     assert session.nudge(1, 0) == PixelRect(1, 20, 70, 60)
+    session.set_preview_result(has_likely_text=True, lines=("private preview",))
     region = session.save()
     assert (region.x, region.y, region.width, region.height) == (0.01, 0.25, 0.7, 0.75)
     assert saved == [region]
+    assert session.preview_lines == ()
+    assert session.preview_has_likely_text is None
     with pytest.raises(CalibrationError, match="closed"):
         session.reset()
 
@@ -79,8 +82,11 @@ def test_cancel_reset_and_no_text_confirmation_never_persist_implicitly() -> Non
     cancel_session = make_session(cancelled)
     cancel_session.begin_drag(5, 5)
     cancel_session.end_drag(20, 20)
+    cancel_session.set_preview_result(has_likely_text=True, lines=("private preview",))
     cancel_session.cancel()
     assert cancelled == []
+    assert cancel_session.preview_lines == ()
+    assert cancel_session.preview_has_likely_text is None
 
 
 def test_invalid_frozen_buffer_is_rejected() -> None:

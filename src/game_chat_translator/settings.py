@@ -90,6 +90,7 @@ class SpeechSettings(SettingsModel):
     enabled: bool = True
     rate: int = Field(default=185, ge=50, le=400)
     volume: float = Field(default=0.9, ge=0.0, le=1.0)
+    voice_id: str | None = Field(default=None, max_length=500)
 
 
 class PrivacySettings(SettingsModel):
@@ -101,6 +102,8 @@ class PrivacySettings(SettingsModel):
 
     @model_validator(mode="after")
     def retention_requires_history(self) -> PrivacySettings:
+        if self.persist_message_history and self.history_retention_days == 0:
+            raise ValueError("enabled history requires a retention period")
         if not self.persist_message_history and self.history_retention_days != 0:
             raise ValueError("history retention must be zero when persistence is disabled")
         return self

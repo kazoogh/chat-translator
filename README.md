@@ -4,7 +4,7 @@ an offline-first Windows tray application that watches a user-calibrated in-game
 
 ## status
 
-build slices 0–4 are implemented: typed foundations, recoverable persistence, documented Win32
+build slices 0–5 are implemented: typed foundations, recoverable persistence, documented Win32
 foreground metadata, calibrated-region capture with fallback, profile debounce, layout
 compatibility checks, the frozen-screenshot calibration interface, PaddleOCR 3.x adapter,
 profile-driven preprocessing, rolling line tracking, conservative profile-driven classification,
@@ -13,7 +13,10 @@ English, Turkish, and mixed-script analysis are available. Slice 4 adds bounded 
 translation with a process-isolated llama.cpp adapter, installed-package-only Argos fallback,
 an always-available reviewed-corpus fallback, checksummed model setup and restart validation,
 generational FIFO publication, and evidence-gated local glossary learning. The complete
-tray/dashboard, voice, and release packaging are built in the subsequent slices in
+tray/dashboard, calibrated live monitoring coordinator, explicit checksum-verified PaddleOCR setup,
+and ordered Windows SAPI inbound speech are now available with memory-only history by default,
+explicit local model/learning actions, privacy-redacted diagnostics, and deterministic shutdown.
+Hold-to-talk voice replies and release packaging are built in the subsequent slices in
 [`BUILD_PLAN.md`](BUILD_PLAN.md).
 
 Slice 2's real-game recall gate remains provisional until privacy-reviewed STALZONE screenshots are
@@ -28,6 +31,11 @@ Slice 4's portable routing, offline-process, model-integrity, persistence, and l
 green. The reviewed real-model 90% translation-quality gate remains provisional until the selected
 allowlisted model is run against the held-out corpus; see
 [`docs/translation_evaluation.md`](docs/translation_evaluation.md).
+
+Slice 5's calibrated capture-to-presentation coordinator, controller, privacy, FIFO speech,
+fake-COM, offscreen Qt, and native SAPI file-synthesis gates are automated. Real-game OCR recall,
+tray, speaker, game-focus, DPI, and multi-monitor checks remain physical;
+see [`docs/slice5_manual_test_checklist.md`](docs/slice5_manual_test_checklist.md).
 
 ## product boundaries
 

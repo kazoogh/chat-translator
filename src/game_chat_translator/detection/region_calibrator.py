@@ -218,6 +218,8 @@ class CalibrationSession:
         self._ensure_open()
         self._selection = None
         self._frozen_bgra = b""
+        self.preview_has_likely_text = None
+        self.preview_lines = ()
         self._cancelled = True
 
     def preview_bgra(self) -> bytes:
@@ -230,12 +232,18 @@ class CalibrationSession:
         return bytes(output)
 
     def save(self, *, confirm_no_text: bool = False) -> ChatRegion:
+        region = self.prepare_save(confirm_no_text=confirm_no_text)
+        self._persist(region)
+        self.complete_save()
+        return region
+
+    def prepare_save(self, *, confirm_no_text: bool = False) -> ChatRegion:
         selection = self._require_selection()
         if self.preview_has_likely_text is False and not confirm_no_text:
             raise CalibrationError(
                 "no likely chat text was detected; explicit confirmation is required to save"
             )
-        region = ChatRegion(
+        return ChatRegion(
             x=selection.left / self.metadata.client_width,
             y=selection.top / self.metadata.client_height,
             width=selection.width / self.metadata.client_width,
@@ -245,10 +253,13 @@ class CalibrationSession:
             reference_client_height=self.metadata.client_height,
             reference_dpi=self.metadata.dpi,
         )
-        self._persist(region)
+
+    def complete_save(self) -> None:
+        self._ensure_open()
         self._frozen_bgra = b""
+        self.preview_has_likely_text = None
+        self.preview_lines = ()
         self._saved = True
-        return region
 
     def _ensure_open(self) -> None:
         if self._cancelled or self._saved:

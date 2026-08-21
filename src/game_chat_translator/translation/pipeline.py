@@ -152,6 +152,20 @@ class TranslationPipeline:
             self._pending = None
         self._router.close()
 
+    def clear_history(self) -> None:
+        """Cancel queued context work and remove every cached translation outcome."""
+        with self._lock:
+            if self._closed:
+                return
+            self._generation_cancel.set()
+            self._generation_cancel = Event()
+            profile, layout, context, glossary, model, config = self._generations
+            self._generations = (profile, layout, context + 1, glossary, model, config)
+            self._requests.clear()
+            self._results.clear()
+            self._pending = None
+        self._router.clear_cache()
+
     @staticmethod
     def _job_generations(job: TranslationJob) -> tuple[int, int, int, int, int, int]:
         return (
