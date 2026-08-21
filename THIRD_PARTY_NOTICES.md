@@ -19,4 +19,3 @@ reviewed before every release artifact is published.
 
 Model, OCR, UI, capture, speech, and translation provider notices are added only after exact
 artifacts have passed license and redistribution review. No model payload is bundled at this stage.
-

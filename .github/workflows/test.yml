@@ -56,4 +56,3 @@ jobs:
       - run: uv sync --frozen --extra build
       - shell: pwsh
         run: .\scripts\packaging_smoke.ps1
-

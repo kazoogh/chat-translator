@@ -12,4 +12,3 @@ if ($Output) {
 } else {
     & uv run gct-diagnostics
 }
-

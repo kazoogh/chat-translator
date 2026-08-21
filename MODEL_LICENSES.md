@@ -8,4 +8,3 @@ or redistributed. A model is not eligible for activation until that record passe
 The STALZONE glossary and corpus were supplied for this project as anonymized, reviewed language
 assets. Their redistribution provenance still requires explicit owner confirmation before a public
 binary release; release tooling must treat that confirmation as a blocking checklist item.
-

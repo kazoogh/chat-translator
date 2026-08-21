@@ -73,4 +73,3 @@ CREATE TABLE IF NOT EXISTS message_history (
 
 CREATE INDEX IF NOT EXISTS idx_history_expires_at ON message_history(expires_at);
 CREATE INDEX IF NOT EXISTS idx_candidates_status ON glossary_candidates(profile_id, status);
-
