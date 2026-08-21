@@ -8,6 +8,7 @@ from threading import Lock
 
 class OfferResult(StrEnum):
     ACCEPTED = "accepted"
+    PARTIALLY_ACCEPTED = "partially_accepted"
     REPLACED_STALE = "replaced_stale"
     REJECTED_FULL = "rejected_full"
     REJECTED_OBSOLETE = "rejected_obsolete"

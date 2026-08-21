@@ -17,7 +17,11 @@
     "direction_markers": [],
     "announce_outbound": false,
     "announce_system": false,
-    "username_pattern": "^[\\w.-]{1,32}$"
+    "username_pattern": "^[\\w.-]{1,32}$",
+    "player_colors": [],
+    "system_colors": [],
+    "outgoing_colors": [],
+    "item_link_patterns": ["\\[[^\\]\\r\\n]{1,80}\\]"]
   },
   "resources": {
     "glossary_id": null,

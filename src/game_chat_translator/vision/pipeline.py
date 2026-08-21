@@ -15,6 +15,7 @@ from game_chat_translator.vision.base import (
     ProviderHealth,
 )
 from game_chat_translator.vision.calibration_preview import Preprocessor
+from game_chat_translator.vision.color_sampling import attach_source_colors
 from game_chat_translator.vision.line_grouping import group_fragments
 from game_chat_translator.vision.line_tracker import LineTracker
 from game_chat_translator.vision.ocr_service import EventCancellationToken
@@ -148,7 +149,14 @@ class OcrPipeline:
             return self._publish(
                 PipelineUpdate(outcome.health, work.generation, 0, outcome.error_code)
             )
-        lines = group_fragments(outcome.fragments)
+        colored_fragments = attach_source_colors(
+            outcome.fragments,
+            raw,
+            preprocess_scale=work.preprocess.scale,
+            candidate_colors=work.preprocess.text_colors,
+            tolerance=work.preprocess.color_tolerance,
+        )
+        lines = group_fragments(colored_fragments)
         with self._lock:
             if work.generation != self._generation:
                 update = PipelineUpdate(

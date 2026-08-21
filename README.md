@@ -4,17 +4,22 @@ an offline-first Windows tray application that watches a user-calibrated in-game
 
 ## status
 
-build slices 0–1 are complete and the Slice 2 implementation is available: typed foundations,
-recoverable persistence, validated profiles,
-documented Win32 foreground metadata, calibrated-region capture with fallback, profile debounce,
-layout compatibility checks, the frozen-screenshot calibration interface, PaddleOCR 3.x adapter,
-profile-driven preprocessing, and rolling line tracking are available. Translation, the complete
-tray/dashboard, voice, and release packaging are built in the subsequent slices in
+build slices 0–3 are implemented: typed foundations, recoverable persistence, documented Win32
+foreground metadata, calibrated-region capture with fallback, profile debounce, layout
+compatibility checks, the frozen-screenshot calibration interface, PaddleOCR 3.x adapter,
+profile-driven preprocessing, rolling line tracking, conservative profile-driven classification,
+validated profile resources and overrides, layered glossary protection, and local Russian,
+English, Turkish, and mixed-script analysis are available. Translation, the complete tray/dashboard,
+voice, and release packaging are built in the subsequent slices in
 [`BUILD_PLAN.md`](BUILD_PLAN.md).
 
 Slice 2's real-game recall gate remains provisional until privacy-reviewed STALZONE screenshots are
 available; synthetic contract tests are not counted as recall evidence. See
 [`docs/ocr_evaluation.md`](docs/ocr_evaluation.md).
+
+Slice 3's deterministic post-OCR classifier gate is green, while its real-game color/language
+evidence remains provisional. Scope and limitations are documented in
+[`docs/classification_evaluation.md`](docs/classification_evaluation.md).
 
 ## product boundaries
 

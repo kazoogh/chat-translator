@@ -1,8 +1,8 @@
 {
   "schema_version": 1,
   "patterns": [
-    "(?i)^.+ (joined|left) the game$",
-    "(?i)^.+ was (slain|shot|killed|blown up) by .+$",
+    "(?i)^.{1,80} (joined|left) the game$",
+    "(?i)^.{1,80} was (slain|shot|killed|blown up) by .{1,80}$",
     "(?i)^You have (the advancement|made the advancement)"
   ]
 }

@@ -26,6 +26,8 @@ reviewed before every release artifact is published.
 | PaddlePaddle | 3.1.1 | Apache-2.0 | https://github.com/PaddlePaddle/Paddle | optional OCR runtime |
 | PaddleX | 3.2.1 | Apache-2.0 | https://github.com/PaddlePaddle/PaddleX | transitive OCR runtime |
 | Pillow | 12.3.0 | HPND | https://python-pillow.org | transitive OCR runtime |
+| fastText wheel | 0.9.2 | MIT | https://github.com/facebookresearch/fastText | optional local language identification runtime; no model bundled |
+| pybind11 | 3.1.0 | BSD-3-Clause | https://github.com/pybind/pybind11 | transitive fastText binding dependency |
 
 The lockfile contains additional transitive development and optional-provider packages; the exact
 artifact inventory and complete upstream notice texts remain a release gate. No model payload is
