@@ -1,11 +1,15 @@
 from __future__ import annotations
 
-import json
 from datetime import UTC, datetime
 from typing import Protocol
 from uuid import UUID, uuid4
 
 from game_chat_translator.models import ChatRegion
+from game_chat_translator.profiles.overrides import (
+    ProfileOverride,
+    export_profile_override,
+    parse_profile_override,
+)
 from game_chat_translator.storage.database import Database
 
 
@@ -167,9 +171,9 @@ class SqliteStateRepository:
             reference_dpi=row["dpi"],
         )
 
-    def save_profile_override(self, profile_id: str, schema_version: int, payload: object) -> None:
+    def save_profile_override(self, override: ProfileOverride) -> None:
         now = datetime.now(UTC).isoformat()
-        encoded = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+        encoded = export_profile_override(override).decode("utf-8")
         with self.database.transaction() as connection:
             connection.execute(
                 """
@@ -180,8 +184,31 @@ class SqliteStateRepository:
                     override_json=excluded.override_json,
                     updated_at=excluded.updated_at
                 """,
-                (profile_id, schema_version, encoded, now),
+                (override.profile_id, override.schema_version, encoded, now),
             )
+
+    def load_profile_override(self, profile_id: str) -> ProfileOverride | None:
+        row = (
+            self.database.open()
+            .execute(
+                """
+                SELECT schema_version, override_json
+                FROM profile_overrides
+                WHERE profile_id = ?
+                """,
+                (profile_id,),
+            )
+            .fetchone()
+        )
+        if row is None:
+            return None
+        encoded = str(row["override_json"]).encode("utf-8")
+        override = parse_profile_override(encoded)
+        if int(row["schema_version"]) != override.schema_version:
+            raise ValueError("stored profile override schema version is inconsistent")
+        if profile_id != override.profile_id:
+            raise ValueError("stored profile override ID is inconsistent")
+        return override
 
     def clear_message_history(self) -> int:
         with self.database.transaction() as connection:

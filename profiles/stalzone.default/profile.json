@@ -17,7 +17,11 @@
     "direction_markers": ["->"],
     "announce_outbound": false,
     "announce_system": false,
-    "username_pattern": "^[\\w.-]{1,32}$"
+    "username_pattern": "^[\\w.-]{1,32}$",
+    "player_colors": ["#FFFFFF", "#74C7EC"],
+    "system_colors": ["#F2D16B"],
+    "outgoing_colors": [],
+    "item_link_patterns": ["\\[[^\\]\\r\\n]{1,80}\\]"]
   },
   "resources": {
     "glossary_id": "stalzone.v1",

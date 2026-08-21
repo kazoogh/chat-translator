@@ -75,6 +75,11 @@ def group_fragments(
                 boxes=tuple(item.fragment.polygon for item in group),
                 confidence=confidence,
                 visual_order=visual_order,
+                colors=tuple(
+                    dict.fromkeys(
+                        item.fragment.color for item in group if item.fragment.color is not None
+                    )
+                ),
             )
         )
     return tuple(lines)

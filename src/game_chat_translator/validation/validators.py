@@ -6,7 +6,6 @@ from pathlib import Path
 
 from pydantic import ValidationError
 
-from game_chat_translator.profiles.loader import ProfileRegistry
 from game_chat_translator.validation.schemas import CorpusRow, GlossaryFile, ModelManifest
 
 
@@ -87,7 +86,9 @@ def validate_model_manifest(path: Path) -> ModelManifest:
 
 
 def validate_repository(root: Path) -> None:
-    ProfileRegistry(root / "profiles").load_all()
+    from game_chat_translator.profiles.resources import ResourceRegistry
+
+    ResourceRegistry(root).load_all()
     validate_glossary(root / "data" / "glossaries" / "stalzone.v1.json")
     validate_corpus(root / "data" / "corpora" / "stalzone.translation.v1.jsonl")
     validate_model_manifest(root / "data" / "models" / "manifest.v1.json")

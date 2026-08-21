@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+import unicodedata
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, HttpUrl, model_validator
+from pydantic import BaseModel, ConfigDict, Field, HttpUrl, field_validator, model_validator
 
 
 class DataModel(BaseModel):
@@ -10,8 +11,8 @@ class DataModel(BaseModel):
 
 
 class GlossaryMetadata(DataModel):
-    source: str
-    notes: str = ""
+    source: str = Field(max_length=500)
+    notes: str = Field(default="", max_length=2000)
 
 
 class GlossaryTerm(DataModel):
@@ -20,19 +21,35 @@ class GlossaryTerm(DataModel):
     category: str = Field(min_length=1, max_length=100)
     notes: str = Field(default="", max_length=1000)
 
+    @field_validator("canonical_english")
+    @classmethod
+    def canonical_not_blank(cls, value: str) -> str:
+        if not unicodedata.normalize("NFKC", value).strip():
+            raise ValueError("canonical glossary term cannot be blank")
+        return value
+
+    @field_validator("aliases")
+    @classmethod
+    def aliases_are_bounded_and_nonblank(cls, values: tuple[str, ...]) -> tuple[str, ...]:
+        if any(
+            not unicodedata.normalize("NFKC", value).strip() or len(value) > 200 for value in values
+        ):
+            raise ValueError("glossary aliases must contain 1 to 200 visible characters")
+        return values
+
 
 class SlangNote(DataModel):
-    source: str
-    meaning: str
-    notes: str = ""
+    source: str = Field(max_length=500)
+    meaning: str = Field(max_length=1000)
+    notes: str = Field(default="", max_length=2000)
 
 
 class GlossaryFile(DataModel):
     schema_version: Literal[1] = 1
     glossary_id: str = "stalzone.v1"
     metadata: GlossaryMetadata
-    terms: tuple[GlossaryTerm, ...]
-    slang_and_profanity_notes: tuple[SlangNote, ...] = ()
+    terms: tuple[GlossaryTerm, ...] = Field(max_length=10_000)
+    slang_and_profanity_notes: tuple[SlangNote, ...] = Field(default=(), max_length=5_000)
 
 
 class ProtectedTerms(DataModel):

@@ -38,7 +38,7 @@ jobs:
       - run: uv run ruff check .
       - run: uv run mypy
       - run: uv run gct-validate .
-      - run: uv run pytest -m "not windows_ui and not vision"
+      - run: uv run pytest -m "not language and not windows_ui and not vision"
 
   windows-packaging-smoke:
     needs: [portable, windows-ui, windows-vision]
@@ -91,7 +91,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - run: uv sync --frozen --extra dev --extra vision
+      - run: uv sync --frozen --extra dev --extra language --extra vision
       - name: Verify pinned OCR wheels import on Windows
-        run: uv run python -c "import cv2, numpy, paddle, paddleocr; print(cv2.__version__, numpy.__version__, paddle.__version__, paddleocr.__version__)"
-      - run: uv run pytest -m vision
+        run: uv run python -c "import cv2, fasttext, numpy, paddle, paddleocr; print(cv2.__version__, numpy.__version__, paddle.__version__, paddleocr.__version__)"
+      - run: uv run pytest -m "language or vision"

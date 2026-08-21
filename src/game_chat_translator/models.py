@@ -95,15 +95,17 @@ class OcrFragment(FrozenModel):
     confidence: float = Field(ge=0.0, le=1.0)
     polygon: tuple[Point, Point, Point, Point]
     script: str
+    color: str | None = None
 
 
 class ChatLine(FrozenModel):
     line_id: UUID = Field(default_factory=uuid4)
-    raw_text: str
-    normalized_text: str
+    raw_text: str = Field(max_length=8192)
+    normalized_text: str = Field(max_length=8192)
     boxes: tuple[tuple[Point, Point, Point, Point], ...] = ()
     confidence: float = Field(ge=0.0, le=1.0)
     visual_order: int = Field(ge=0)
+    colors: tuple[str, ...] = ()
 
 
 class MessageClass(StrEnum):

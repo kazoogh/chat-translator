@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "cases": [
+    {"id": "in-ru-01", "text": "Vasya: ты куда идёшь?", "expected": "player_inbound"},
+    {"id": "in-ru-02", "text": "Maks: нужно потестить сканер", "expected": "player_inbound"},
+    {"id": "in-en-01", "text": "Trader: selling medkits", "expected": "player_inbound"},
+    {"id": "in-tr-01", "text": "Mahmut: naber kanka", "expected": "player_inbound"},
+    {"id": "in-item-01", "text": "LootGoblin: take [Ice Hedgehog]", "expected": "player_inbound"},
+    {"id": "in-punct-01", "text": "xXScoutXx: wow!!!!", "expected": "player_inbound"},
+    {"id": "in-number-01", "text": "Buyer42: 3 Raisins for 4kk", "expected": "player_inbound"},
+    {"id": "in-dot-01", "text": "player.name: hello", "expected": "player_inbound"},
+    {"id": "in-dash-01", "text": "player-name: privet", "expected": "player_inbound"},
+    {"id": "in-mixed-01", "text": "Cem: привет abi", "expected": "player_inbound"},
+    {"id": "unknown-01", "text": "unstructured visible text", "expected": "unknown"},
+    {"id": "unknown-02", "text": "[Item without speaker]", "expected": "unknown"},
+    {"id": "unknown-low", "text": "MaybePlayer: uncertain", "expected": "unknown", "confidence": 0.4}
+  ],
+  "families": [
+    {"id_prefix": "inbound-player", "count": 60, "template": "Player{n}: hello", "expected": "player_inbound"},
+    {"id_prefix": "inbound-system-word-left", "count": 60, "template": "Scout{n}: I left loot", "expected": "player_inbound"},
+    {"id_prefix": "inbound-system-word-artifact", "count": 60, "template": "Trader{n}: artifact found", "expected": "player_inbound"},
+    {"id_prefix": "system-join", "count": 60, "template": "SyntheticPlayer{n} joined", "expected": "system"},
+    {"id_prefix": "system-left", "count": 60, "template": "SyntheticPlayer{n} disconnected", "expected": "system"},
+    {"id_prefix": "system-event", "count": 60, "template": "artifact started {n}", "expected": "system"},
+    {"id_prefix": "outbound-marker", "count": 60, "template": "-> Friend{n}: hello", "expected": "player_outbound"},
+    {"id_prefix": "outbound-self", "count": 60, "template": "LocalPlayer: message {n}", "expected": "player_outbound"}
+  ]
+}
