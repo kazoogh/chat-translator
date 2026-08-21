@@ -1,0 +1,1 @@
+"""Declarative, versioned game profiles."""

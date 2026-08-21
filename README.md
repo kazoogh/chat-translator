@@ -4,7 +4,10 @@ an offline-first Windows tray application that watches a user-calibrated in-game
 
 ## status
 
-architecture and initial STALZONE language data are ready. application implementation begins with build slice 0 in [`BUILD_PLAN.md`](BUILD_PLAN.md).
+build slice 0 is implemented: typed runtime contracts, recoverable versioned settings, SQLite
+migrations, validated data/profile foundations, portable CI, and privacy-redacted diagnostics are
+available. Windows capture, OCR, translation, desktop UI, voice, and release packaging are built in
+the subsequent slices in [`BUILD_PLAN.md`](BUILD_PLAN.md).
 
 ## product boundaries
 
@@ -41,7 +44,25 @@ architecture and initial STALZONE language data are ready. application implement
 
 ## development
 
-the source bootstrap and run commands will be added in build slice 0. commands are intentionally not documented before they exist and pass on Windows.
+Install Python 3.12 or 3.13, clone the repository, and run the one-command bootstrap from PowerShell:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\bootstrap.ps1
+```
+
+The script installs the pinned `uv` bootstrap tool when needed, creates `.venv`, installs the locked
+development environment, validates bundled resources, and runs formatting, lint, type, and test
+gates. Launch the current application entry point with:
+
+```powershell
+python -m uv run game-chat-translator
+```
+
+Collect a privacy-redacted hardware and foreground-window diagnostic with:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\diagnostics.ps1 -Output diagnostic.json
+```
 
 ## license
 

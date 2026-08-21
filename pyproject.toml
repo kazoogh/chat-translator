@@ -1,0 +1,63 @@
+[build-system]
+requires = ["hatchling==1.27.0"]
+build-backend = "hatchling.build"
+
+[project]
+name = "game-chat-translator"
+version = "0.1.0"
+description = "Offline-first Windows game chat translator"
+readme = "README.md"
+requires-python = ">=3.12,<3.14"
+license = { file = "LICENSE" }
+authors = [{ name = "kazoogh" }]
+dependencies = [
+  "platformdirs==4.3.8",
+  "pydantic==2.11.7",
+]
+
+[project.optional-dependencies]
+dev = [
+  "mypy==1.17.1",
+  "pre-commit==4.3.0",
+  "pytest==8.4.1",
+  "pytest-cov==6.2.1",
+  "ruff==0.12.8",
+]
+windows = [
+  "psutil==7.0.0; sys_platform == 'win32'",
+  "pywin32==311; sys_platform == 'win32'",
+]
+build = [
+  "pyinstaller==6.15.0",
+]
+
+[project.scripts]
+game-chat-translator = "game_chat_translator.__main__:main"
+gct-validate = "game_chat_translator.validation.cli:main"
+gct-diagnostics = "game_chat_translator.diagnostics:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/game_chat_translator"]
+
+[tool.pytest.ini_options]
+addopts = "--strict-config --strict-markers -ra"
+testpaths = ["tests"]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+packages = ["game_chat_translator"]
+mypy_path = "src"
+
+[[tool.mypy.overrides]]
+module = ["win32api", "win32gui", "win32process"]
+ignore_missing_imports = true
+

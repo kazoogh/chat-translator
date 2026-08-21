@@ -1,4 +1,6 @@
 {
+  "schema_version": 1,
+  "glossary_id": "stalzone.v1",
   "metadata": {
     "source": "reviewed STALZONE game-chat screenshots and translation examples supplied for this project",
     "notes": "canonical English terms are normalized for natural STALZONE gamer usage; aliases include Russian, transliteration, abbreviations, and observed misspellings."

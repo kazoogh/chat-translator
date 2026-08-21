@@ -1,0 +1,7 @@
+{
+  "schema_version": 1,
+  "patterns": [
+    "(?i)\\b(joined|left|connected|disconnected)\\b",
+    "(?i)\\b(event|detector|artifact) (started|ended|found)\\b"
+  ]
+}
