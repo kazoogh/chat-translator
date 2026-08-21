@@ -12,3 +12,4 @@ dist/
 *.sqlite3*
 *.log
 *.tmp
+local_fixtures/

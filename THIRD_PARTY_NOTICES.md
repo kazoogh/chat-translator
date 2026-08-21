@@ -20,8 +20,14 @@ reviewed before every release artifact is published.
 | mss | 10.0.0 | MIT | https://github.com/BoboTiG/python-mss | optional capture fallback |
 | PySide6 / Qt | 6.9.1 | LGPL-3.0-only (selected modules) | https://www.qt.io | optional desktop UI; dynamic libraries and notices must ship |
 | comtypes | 1.4.16 | MIT | https://github.com/enthought/comtypes | transitive Windows capture dependency |
-| NumPy | 2.5.2 | BSD-3-Clause | https://numpy.org | transitive Windows capture dependency |
-| OpenCV Python | 5.0.0.93 | Apache-2.0 | https://github.com/opencv/opencv-python | transitive Windows capture dependency |
+| NumPy | 2.2.6 | BSD-3-Clause | https://numpy.org | optional vision runtime |
+| OpenCV Python / contrib | 4.10.0.84 | Apache-2.0 | https://github.com/opencv/opencv-python | optional capture/vision runtime; matched versions share the `cv2` namespace |
+| PaddleOCR | 3.2.0 | Apache-2.0 | https://github.com/PaddlePaddle/PaddleOCR | optional OCR runtime; no models bundled |
+| PaddlePaddle | 3.1.1 | Apache-2.0 | https://github.com/PaddlePaddle/Paddle | optional OCR runtime |
+| PaddleX | 3.2.1 | Apache-2.0 | https://github.com/PaddlePaddle/PaddleX | transitive OCR runtime |
+| Pillow | 12.3.0 | HPND | https://python-pillow.org | transitive OCR runtime |
 
-Model, OCR, UI, capture, speech, and translation provider notices are added only after exact
-artifacts have passed license and redistribution review. No model payload is bundled at this stage.
+The lockfile contains additional transitive development and optional-provider packages; the exact
+artifact inventory and complete upstream notice texts remain a release gate. No model payload is
+bundled at this stage. Each downloadable model requires separate source, license, size, and SHA-256
+metadata before it can appear in the allowlist.

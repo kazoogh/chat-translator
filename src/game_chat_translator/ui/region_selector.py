@@ -4,6 +4,7 @@ from collections.abc import Callable
 from contextlib import suppress
 from typing import Any
 
+from game_chat_translator.capture.base import RawFrame
 from game_chat_translator.detection.region_calibrator import (
     CalibrationError,
     CalibrationSession,
@@ -17,11 +18,16 @@ class RegionSelectorUnavailable(RuntimeError):
 
 
 def launch_region_selector(
-    session: CalibrationSession, *, retry_capture: Callable[[], bytes] | None = None
+    session: CalibrationSession,
+    *,
+    retry_capture: Callable[[], bytes] | None = None,
+    request_preview: (
+        Callable[[RawFrame, Callable[[bool, tuple[str, ...]], None]], None] | None
+    ) = None,
 ) -> int:
     """Launch the frozen-screenshot clipping UI with a memory-only preview."""
     try:
-        from PySide6.QtCore import QPoint, QRect, Qt
+        from PySide6.QtCore import QPoint, QRect, Qt, QTimer, Signal
         from PySide6.QtGui import QColor, QImage, QKeyEvent, QMouseEvent, QPainter, QPen
         from PySide6.QtWidgets import QApplication, QMessageBox, QPushButton, QWidget
     except ImportError as exc:
@@ -54,6 +60,7 @@ def launch_region_selector(
 
     class RegionSelector(QWidget):  # type: ignore[misc]
         HANDLE_RADIUS = 8
+        preview_ready = Signal(int, bool, object)
 
         def __init__(self) -> None:
             super().__init__()
@@ -68,7 +75,11 @@ def launch_region_selector(
             self._mode: str | None = None
             self._handle: ResizeHandle | None = None
             self._last_point = QPoint()
+            self._preview_generation = 0
+            self.preview_ready.connect(self._apply_preview)
             self._create_buttons()
+            if session.selection is not None:
+                QTimer.singleShot(0, self._request_preview)
 
         def _new_image(self) -> QImage:
             return QImage(
@@ -120,7 +131,8 @@ def launch_region_selector(
             painter.setBrush(QColor("#40c4ff"))
             for point in self._corners(target).values():
                 painter.drawEllipse(point, self.HANDLE_RADIUS // 2, self.HANDLE_RADIUS // 2)
-            preview_area = panel.adjusted(20, 275, -20, -30)
+            preview_top = 345 if session.preview_lines else 275
+            preview_area = panel.adjusted(20, preview_top, -20, -30)
             scaled = source.size().scaled(preview_area.size(), Qt.AspectRatioMode.KeepAspectRatio)
             preview_target = QRect(preview_area.topLeft(), scaled)
             painter.drawImage(preview_target, self._image, source)
@@ -132,6 +144,13 @@ def launch_region_selector(
                     panel.adjusted(20, 250, -20, -20),
                     Qt.AlignmentFlag.AlignTop,
                     "No likely chat text detected; Save will ask for confirmation.",
+                )
+            elif session.preview_lines:
+                painter.setPen(QColor("#a5d6a7"))
+                painter.drawText(
+                    panel.adjusted(20, 245, -20, -20),
+                    Qt.AlignmentFlag.AlignTop,
+                    "Sample OCR:\n" + "\n".join(session.preview_lines[:3]),
                 )
 
         def mousePressEvent(self, event: QMouseEvent) -> None:
@@ -174,6 +193,7 @@ def launch_region_selector(
                     session.end_drag(*viewport.view_to_image(point.x(), point.y()))
             self._mode = None
             self._handle = None
+            self._request_preview()
             self.update()
 
         def keyPressEvent(self, event: QKeyEvent) -> None:
@@ -202,6 +222,7 @@ def launch_region_selector(
                     delta.y(),
                     resize=bool(event.modifiers() & Qt.KeyboardModifier.ShiftModifier),
                 )
+                self._request_preview()
                 self.update()
 
         def _save(self) -> None:
@@ -216,13 +237,16 @@ def launch_region_selector(
                     )
                     if answer == QMessageBox.StandardButton.Yes:
                         session.save(confirm_no_text=True)
+                        self._invalidate_preview()
                         self.close()
                         return
                 QMessageBox.warning(self, "Cannot save selection", str(exc))
                 return
+            self._invalidate_preview()
             self.close()
 
         def _reset(self) -> None:
+            self._invalidate_preview()
             session.reset()
             self.update()
 
@@ -231,6 +255,7 @@ def launch_region_selector(
                 return
             try:
                 replacement = retry_capture()
+                self._invalidate_preview()
                 session.retry(replacement)
                 self._image = self._new_image()
             except (CalibrationError, OSError, RuntimeError) as exc:
@@ -238,10 +263,51 @@ def launch_region_selector(
             self.update()
 
         def _cancel(self) -> None:
+            self._invalidate_preview()
             session.cancel()
             self.close()
 
+        def _request_preview(self) -> None:
+            selection = session.selection
+            if request_preview is None or selection is None:
+                return
+            self._preview_generation += 1
+            preview_generation = self._preview_generation
+            session.set_preview_result(has_likely_text=None)
+            frame = RawFrame(
+                selection.width,
+                selection.height,
+                "BGRA",
+                session.preview_bgra(),
+            )
+            try:
+                request_preview(
+                    frame,
+                    lambda likely, lines: self.preview_ready.emit(
+                        preview_generation, likely, lines
+                    ),
+                )
+            except (OSError, RuntimeError, TypeError, ValueError):
+                session.set_preview_result(has_likely_text=None)
+                QMessageBox.warning(
+                    self,
+                    "OCR preview unavailable",
+                    "The OCR preview could not start. The screenshot remains in memory "
+                    "so you can retry.",
+                )
+
+        def _apply_preview(self, generation: int, likely: bool, lines: object) -> None:
+            if generation != self._preview_generation:
+                return
+            rendered = tuple(str(line) for line in lines) if isinstance(lines, tuple) else ()
+            session.set_preview_result(has_likely_text=likely, lines=rendered)
+            self.update()
+
+        def _invalidate_preview(self) -> None:
+            self._preview_generation += 1
+
         def closeEvent(self, event: Any) -> None:
+            self._invalidate_preview()
             if not session.saved and not session.cancelled:
                 with suppress(CalibrationError):
                     session.cancel()

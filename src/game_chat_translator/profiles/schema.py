@@ -86,6 +86,13 @@ class PreprocessRules(ProfileModel):
     sharpen: bool = True
     text_colors: tuple[str, ...] = ()
 
+    @field_validator("text_colors")
+    @classmethod
+    def valid_text_colors(cls, values: tuple[str, ...]) -> tuple[str, ...]:
+        if any(re.fullmatch(r"#[0-9A-Fa-f]{6}", value) is None for value in values):
+            raise ValueError("preprocess text colors must use #RRGGBB")
+        return values
+
 
 class GameProfile(ProfileModel):
     schema_version: Literal[1]

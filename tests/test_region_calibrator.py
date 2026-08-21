@@ -39,6 +39,8 @@ def test_drag_in_both_directions_and_preview(
     session.begin_drag(*start)
     assert session.end_drag(*end) == expected
     assert len(session.preview_bgra()) == expected.width * expected.height * 4
+    session.set_preview_result(has_likely_text=True, lines=("Игрок: привет",))
+    assert session.preview_lines == ("Игрок: привет",)
 
 
 def test_move_resize_nudge_clamp_and_save_normalized() -> None:
