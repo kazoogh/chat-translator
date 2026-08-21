@@ -50,7 +50,9 @@ def recommend_model(
 def _physical_memory() -> int:
     if os.name != "nt":
         try:
-            sysconf = os.sysconf  # type: ignore[attr-defined]
+            sysconf = getattr(os, "sysconf", None)
+            if sysconf is None:
+                return 0
             page_size = sysconf("SC_PAGE_SIZE")
             pages = sysconf("SC_PHYS_PAGES")
             return int(page_size * pages)
@@ -72,6 +74,7 @@ def _physical_memory() -> int:
 
     status = MemoryStatus()
     status.length = ctypes.sizeof(status)
-    if not ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(status)):
+    windll = getattr(ctypes, "windll", None)
+    if windll is None or not windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(status)):
         return 0
     return int(status.total_physical)
