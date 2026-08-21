@@ -3,7 +3,9 @@ from __future__ import annotations
 import sys
 from types import ModuleType
 
-from game_chat_translator.speech import SpeechSettings, WindowsSapiProvider
+import pytest
+
+from game_chat_translator.speech import SpeechProviderError, SpeechSettings, WindowsSapiProvider
 
 
 class _Token:
@@ -70,3 +72,30 @@ def test_sapi_is_lazy_com_owned_plain_text_and_cancellable(monkeypatch) -> None:
     assert voice.Voice is not None
     assert voice.calls[0] == ("<pitch>untrusted</pitch>", 17)
     assert all(text == "" and flags == 19 for text, flags in voice.calls[1:])
+
+
+def test_sapi_close_releases_com_when_broken_voice_rejects_purge(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    events: list[str] = []
+    voice = _Voice()
+
+    def broken_speak(text: str, flags: int) -> None:
+        raise OSError("fixture voice is unavailable")
+
+    voice.Speak = broken_speak  # type: ignore[method-assign]
+    pythoncom = ModuleType("pythoncom")
+    pythoncom.CoInitialize = lambda: events.append("init")  # type: ignore[attr-defined]
+    pythoncom.CoUninitialize = lambda: events.append("uninit")  # type: ignore[attr-defined]
+    win32com = ModuleType("win32com")
+    client = ModuleType("win32com.client")
+    client.Dispatch = lambda name: voice  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "pythoncom", pythoncom)
+    monkeypatch.setitem(sys.modules, "win32com", win32com)
+    monkeypatch.setitem(sys.modules, "win32com.client", client)
+
+    provider = WindowsSapiProvider()
+    with pytest.raises(SpeechProviderError, match="cancellation failed"):
+        provider.cancel()
+    provider.close()
+    provider.close()
+
+    assert events == ["init", "uninit"]

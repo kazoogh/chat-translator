@@ -72,15 +72,24 @@ class WindowsSapiProvider:
 
     def cancel(self) -> None:
         if not self._closed:
-            self._voice.Speak("", _SVS_FLAGS_ASYNC | _SVS_FLAGS_PURGE | _SVS_FLAGS_NOT_XML)
+            try:
+                self._voice.Speak("", _SVS_FLAGS_ASYNC | _SVS_FLAGS_PURGE | _SVS_FLAGS_NOT_XML)
+            except Exception as exc:
+                raise SpeechProviderError("Windows speech cancellation failed") from exc
 
     def close(self) -> None:
         if self._closed:
             return
-        self.cancel()
-        self._closed = True
-        self._voice = None
-        self._pythoncom.CoUninitialize()
+        try:
+            self.cancel()
+        except SpeechProviderError:
+            # A missing/broken Windows voice can also reject the purge command. Closing remains
+            # best-effort and must always release this thread's COM apartment.
+            pass
+        finally:
+            self._closed = True
+            self._voice = None
+            self._pythoncom.CoUninitialize()
 
     def _select_voice(self, voice_id: str) -> None:
         voices = self._voice.GetVoices()

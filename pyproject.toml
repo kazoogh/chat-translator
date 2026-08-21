@@ -40,9 +40,9 @@ language = [
 ]
 translation = [
   "argostranslate==1.11.0",
-  # Stanza otherwise resolves to the newest PyTorch release. Pin the tested CPU-capable runtime;
-  # torch 2.13.0 fails to load shm.dll on the Windows 2025 hosted runner.
-  "torch==2.12.1",
+  # Stanza otherwise resolves to the newest PyTorch release. Pin the established CPU-capable
+  # runtime; newer 2.12/2.13 wheels fail to load shm.dll on the Windows 2025 hosted runner.
+  "torch==2.7.1",
   "llama-cpp-python @ https://github.com/abetlen/llama-cpp-python/releases/download/v0.3.19/llama_cpp_python-0.3.19-cp312-cp312-win_amd64.whl#sha256=1843b30d90e35296dbd9bd0b2b753b42f0fafa6aec6d2b1c0fff352f801bc89b ; sys_platform == 'win32' and python_version == '3.12'",
 ]
 vision = [
