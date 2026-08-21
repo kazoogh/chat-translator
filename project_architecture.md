@@ -1,6 +1,7 @@
 # game chat translator — project architecture
 
-status: planning  
+status: build-ready specification  
+architecture version: 1.0  
 target platform: windows 10/11  
 primary use case: detect and translate multilingual in-game chat into natural gamer english, preserving slang, tone, profanity, game terminology, names, and formatting, then display and optionally read it aloud. stalzone is the first fully tuned game profile, not a permanent limitation of the core engine.
 
@@ -50,6 +51,7 @@ build a small external desktop companion that:
 - hold-to-talk voice replies with speaker/language targeting and clipboard output.
 - reply preview, copy confirmation, and easy correction before pasting into the game.
 - generic-game profile and first-party stalzone profile.
+- first-party Minecraft Java profile as the second-game proof; manual calibration remains available for customized chat layouts.
 - profile selector and profile creation/import/export controls.
 - first-run wizard for chat-region selection, audio test, hold-to-talk key, hardware detection, and model/profile download.
 - foreground-game detection and automatic profile/layout switching.
@@ -67,7 +69,7 @@ build a small external desktop companion that:
 - paid translation, speech, or language-model APIs.
 - automatically clicking player names, opening chat, pasting, or pressing Enter.
 - packaging through the Microsoft Store.
-- tuned built-in profiles for games other than stalzone.
+- tuned built-in profiles for games other than STALZONE and Minecraft Java.
 
 ## 3. recommended stack
 
@@ -78,20 +80,24 @@ build a small external desktop companion that:
 | image processing | OpenCV + Pillow | thresholding, scaling, color masks, and debug images |
 | OCR | PaddleOCR with script/language routing | strong Cyrillic support with expandable multilingual models |
 | language identification | fastText, plus script heuristics | free local per-message detection with mixed-language fallback |
-| contextual translation | local multilingual model through Ollama | handles slang, typos, context, profanity, and game terminology without API charges |
+| contextual translation | bundled `llama.cpp`-compatible runtime with a validated multilingual GGUF model | avoids requiring Ollama or another separately installed service while preserving local slang/context quality |
 | lightweight translation | Argos Translate | free offline fallback for machines that cannot run a local LLM well |
 | voice recognition | faster-whisper | free local multilingual speech-to-text with CPU/GPU options |
-| text-to-speech | `pyttsx3` initially | offline and built into the local app flow |
+| text-to-speech | Windows SAPI through `pywin32` | built into Windows, offline, and avoids another speech service |
 | UI | PySide6 | better window, tray, hotkey, and packaging support than tkinter |
 | global hotkeys | `pynput` | configurable controls outside the focused window |
 | game detection | Win32 foreground-window APIs through `pywin32` | identifies focused executable/window metadata without reading game memory |
 | reply delivery | Qt clipboard | does not simulate game input and lets the user verify the recipient/message |
-| settings | JSON via Pydantic models | typed validation without a database |
+| settings | versioned JSON via Pydantic models | human-readable typed configuration |
+| runtime state | SQLite with explicit migrations | durable calibrations, learned terms, model metadata, and optional bounded history need transactional updates |
+| dependency locking | `uv.lock` generated from `pyproject.toml` | reproducible developer, CI, and packaging environments |
 | application packaging | PyInstaller one-folder build | bundles Python/runtime dependencies without requiring Python on the user's PC |
 | installer | Inno Setup | produces one familiar Windows setup executable with shortcuts and uninstall support |
 | tests | pytest | unit and integration coverage |
 
 the OCR, language-identification, translation, glossary, and speech engines will sit behind interfaces. providers can be replaced without changing capture, line tracking, or the UI.
+
+all dependency and model versions are pinned only after the first Windows compatibility build. PaddleOCR 3.x is a deliberate API boundary and must not be implemented from obsolete 2.x examples.
 
 translation modes:
 
@@ -121,6 +127,17 @@ flowchart TD
     J --> M
     M --> N["preview + clipboard"]
 ```
+
+### architectural invariants
+
+- core domain objects and events are typed, immutable, provider-neutral structures.
+- UI classes depend on application services and event interfaces, never directly on OCR, capture, translation, speech, or Win32 implementations.
+- each mutable subsystem has one owner thread/task; workers communicate through bounded queues and cancellation tokens.
+- every external model/provider call has a timeout, cancellation path, health state, and deterministic fallback.
+- persisted settings, database rows, profiles, glossaries, corpora, and model manifests carry schema versions and have validation/migration tests.
+- normal shutdown drains or cancels workers in a defined order and never leaves microphone capture, hotkeys, or model processes running.
+- startup can recover from a corrupt config, interrupted model download, unavailable GPU provider, missing profile, or stale calibration without crashing the tray process.
+- no game-specific conditional logic belongs in the core pipeline when the behavior can be represented by a validated profile.
 
 ## 5. component responsibilities
 
@@ -235,6 +252,16 @@ this avoids the main flaw in the minimal prototype: a permanent `seen` set would
 - make no network request during normal translation.
 - select the best installed local engine automatically and show which engine is active.
 
+### `model_manager`
+
+- maintain a versioned allowlist manifest containing model ID, provider, languages, minimum hardware tier, size, license, source URL, and SHA-256 digest.
+- select `cpu_low`, `cpu_balanced`, or `gpu` defaults from a local hardware probe; always let the user override the recommendation.
+- download models only during explicit setup/update actions, using a temporary file plus digest verification and atomic rename.
+- never execute code from a model package or trust filenames/paths supplied by a remote manifest.
+- expose download size, disk requirement, model license, progress, cancellation, retry, and removal controls.
+- share compatible models across game profiles and keep the last known working model until its replacement passes a health check.
+- fall back in order: contextual local model, lightweight offline translator, original text with a visible error state.
+
 example target behavior:
 
 | source | natural output |
@@ -342,13 +369,29 @@ example target behavior:
 
 ### `storage`
 
-- store settings in `%APPDATA%/ChatTranslator/config.json`.
+- store application data under `%LOCALAPPDATA%/GameChatTranslator/` because profiles, models, logs, and learned state are machine-local.
+- store validated user settings in `config.json` using atomic replace and a last-known-good backup.
+- store calibrations, learned aliases, glossary candidates, installed-model metadata, profile overrides, and optional bounded history in `state.sqlite3` using WAL mode and numbered migrations.
+- keep normal message history memory-only by default; persistence is an explicit opt-in with retention and Clear Now controls.
 - keep normal operation local and ephemeral.
-- write rotating diagnostic logs with no screenshots by default.
+- write size-bounded rotating diagnostic logs with no screenshots, microphone audio, clipboard contents, or full chat text by default.
 - provide an explicit export-debug-bundle action.
 - store installed game profiles and downloaded local models separately from the executable.
 - allow profile/model updates without replacing the main executable.
 - store user calibrations separately from shipped profiles so profile updates never overwrite local layouts.
+- make database migrations forward-only during normal startup and create a backup before any destructive migration.
+
+minimum SQLite tables:
+
+| table | purpose |
+| --- | --- |
+| `schema_migrations` | applied migration versions and timestamps |
+| `calibrations` | normalized client-relative regions keyed by profile/layout/display metadata |
+| `learned_terms` | active user aliases and provenance/confidence metadata |
+| `glossary_candidates` | pending, accepted, rejected, or blocked learning proposals |
+| `installed_models` | verified model path, digest, provider, license, and health state |
+| `profile_overrides` | user changes kept separate from signed/bundled profiles |
+| `message_history` | optional bounded history only when persistence is enabled |
 
 ## 6. concurrency model
 
@@ -366,20 +409,41 @@ the UI thread must never run OCR, translation, or TTS directly.
 | reply worker | resolve target and translate outbound text | one draft at a time |
 | UI thread | render status and translations | receive signals/events only |
 
+### application lifecycle
+
+| state | allowed work | exit condition |
+| --- | --- | --- |
+| `starting` | load config, migrate storage, validate profiles, register tray | required services initialized or a recoverable setup error is shown |
+| `needs_setup` | dashboard, calibration, model setup, diagnostics | minimum profile, region, and OCR model are ready |
+| `paused` | UI, tray, configuration, model management | user resumes and a supported/manual profile is available |
+| `monitoring` | foreground detection, capture, OCR, classification, translation, TTS | pause, calibration, model change, fatal worker failure, or shutdown |
+| `recording_reply` | microphone capture; inbound TTS paused | hold-to-talk key released or recording cancelled |
+| `processing_reply` | STT, target resolution, translation, preview/clipboard | draft completed, failed, cancelled, or replaced |
+| `degraded` | UI plus surviving providers/fallbacks | provider health recovers, user changes configuration, or shutdown |
+| `stopping` | cancel producers, drain bounded user-visible work, unregister hooks, close models/database | process exits |
+
+events and service interfaces are specified in `docs/runtime_contracts.md`. no worker may pass raw provider-specific response objects across subsystem boundaries.
+
 ## 7. proposed repository layout
 
 ```text
 chat-translator/
 ├── README.md
 ├── project_architecture.md
+├── BUILD_PLAN.md
+├── LICENSE
 ├── pyproject.toml
-├── requirements.lock
+├── uv.lock
+├── docs/
+│   └── runtime_contracts.md
 ├── src/
 │   └── game_chat_translator/
 │       ├── __main__.py
 │       ├── app.py
 │       ├── models.py
 │       ├── settings.py
+│       ├── events.py
+│       ├── lifecycle.py
 │       ├── capture/
 │       │   ├── base.py
 │       │   ├── dxcam_capture.py
@@ -405,9 +469,18 @@ chat-translator/
 │       │   └── region_calibrator.py
 │       ├── translation/
 │       │   ├── base.py
-│       │   ├── ollama_local.py
+│       │   ├── llama_cpp_local.py
 │       │   ├── argos_translate.py
 │       │   └── router.py
+│       ├── model_management/
+│       │   ├── manifest.py
+│       │   ├── hardware.py
+│       │   ├── downloader.py
+│       │   └── manager.py
+│       ├── storage/
+│       │   ├── database.py
+│       │   ├── repositories.py
+│       │   └── migrations/
 │       ├── voice/
 │       │   ├── recorder.py
 │       │   ├── faster_whisper_stt.py
@@ -447,14 +520,17 @@ chat-translator/
 │   ├── test_speaker_tracker.py
 │   ├── test_voice_commands.py
 │   ├── test_reply_controller.py
-│   └── test_settings.py
+│   ├── test_settings.py
+│   ├── test_storage_migrations.py
+│   ├── test_model_manifest.py
+│   └── test_lifecycle.py
 ├── scripts/
 │   ├── capture_fixture.py
 │   ├── bootstrap.ps1
 │   ├── build_windows.ps1
 │   └── build_installer.ps1
 ├── installer/
-│   └── chat-translator.iss
+│   └── game-chat-translator.iss
 ├── data/
 │   ├── README.md
 │   ├── corpora/
@@ -463,14 +539,13 @@ chat-translator/
 │       └── stalzone.v1.json
 ├── profiles/
 │   ├── generic.default/
-│   │   ├── profile.json
-│   │   └── glossary.json
+│   │   └── profile.json
 │   ├── stalzone.default/
 │   │   ├── profile.json
-│   │   ├── system_patterns.json
-│   │   └── glossary.json
+│   │   └── system_patterns.json
 │   └── minecraft.java/
-│       └── README.md
+│       ├── profile.json
+│       └── system_patterns.json
 ├── .github/
 │   └── workflows/
 │       ├── test.yml
@@ -510,7 +585,8 @@ chat-translator/
   "translation": {
     "enabled": true,
     "mode": "local_contextual",
-    "provider": "ollama",
+    "provider": "llama_cpp",
+    "model_id": "auto",
     "source": "auto",
     "target": "en",
     "style": "natural_gamer",
@@ -518,6 +594,14 @@ chat-translator/
     "preserve_profanity": true,
     "show_literal_translation": false,
     "glossary": "profile_default"
+  },
+  "learning": {
+    "enabled": true,
+    "automatic_existing_term_aliases": true,
+    "minimum_distinct_occurrences": 3,
+    "minimum_confidence": 0.9,
+    "confirm_new_canonical_terms": true,
+    "share_candidates": false
   },
   "reply": {
     "enabled": true,
@@ -541,6 +625,13 @@ chat-translator/
     "enabled": true,
     "rate": 185,
     "volume": 0.9
+  },
+  "privacy": {
+    "persist_message_history": false,
+    "history_retention_days": 0,
+    "diagnostic_text_logging": false,
+    "save_debug_frames": false,
+    "telemetry": false
   },
   "hotkeys": {
     "toggle_capture": "ctrl+shift+t",
@@ -573,7 +664,7 @@ chat-translator/
     "announce_system": false
   },
   "resources": {
-    "glossary": "glossary.json",
+    "glossary_id": "stalzone.v1",
     "system_patterns": "system_patterns.json"
   },
   "layouts": {
@@ -585,8 +676,9 @@ chat-translator/
 
 ### distribution model
 
-- public download is a single signed-ready installer such as `ChatTranslator-Setup-x64.exe`.
-- the installer contains the desktop application and lightweight generic/stalzone profiles.
+- public download is a single installer such as `GameChatTranslator-Setup-x64.exe`.
+- early releases may be unsigned and will publish SHA-256 checksums; Authenticode signing is added only when a trusted certificate is available and is never falsely implied.
+- the installer contains the desktop application and lightweight generic, STALZONE, and Minecraft Java profiles.
 - the first-run wizard downloads only the free local models selected for the user's hardware.
 - downloaded models live in application data and are shared across game profiles.
 - normal operation remains offline after required models are installed.
@@ -594,6 +686,8 @@ chat-translator/
 - Windows builds run on Windows because PyInstaller is not a cross-compiler.
 - releases include installer checksum, version, changelog, and reproducible build instructions.
 - tagged releases trigger a Windows GitHub Actions workflow that runs tests, builds the application and installer, generates checksums, and attaches release assets.
+- model/profile manifests bundled with a release contain fixed URLs, licenses, sizes, and SHA-256 digests; an interrupted or mismatched download is never activated.
+- v1 checks GitHub Releases only when the user explicitly selects `Check for updates`; it does not run a silent self-updater.
 - source users clone the repository and run one documented command: `powershell -ExecutionPolicy Bypass -File .\scripts\bootstrap.ps1`.
 - the bootstrap script validates prerequisites, creates an isolated environment, installs pinned dependencies, installs the application for the current user, and reports the launch command.
 - source installation is a developer/contributor path; normal users should download the release installer.
@@ -644,7 +738,7 @@ the default `natural_gamer` policy is part of the product contract:
 3. OCR extracts the speaker and message, then the tracker confirms it is new.
 4. the classifier confirms it is an inbound player message rather than a system or outgoing message.
 5. the local translator detects Russian, applies chat context and the game glossary, and produces `where are you going?`.
-6. the window displays the original and translation.
+6. the window displays the natural translation; the original remains available in the detail/history view.
 7. TTS says: `Vasya said: where are you going?`.
 
 when Vasya sends three messages consecutively, all three translations enter the speech queue and play one by one in their original order. no message is merged or silently discarded.
@@ -669,7 +763,7 @@ when Vasya sends three messages consecutively, all three translations enter the 
 - do not send keystrokes or automate gameplay.
 - do not click player names, focus game windows, paste, or press Enter automatically in v1.
 - keep OCR text, microphone audio, transcripts, and translations on the computer by default.
-- require an explicit future architecture decision before adding any network-backed provider.
+- require an explicit future architecture decision before sending chat/audio content to any network-backed processing provider; model/profile/update downloads are content-free and user initiated.
 - never require a paid API for a core feature.
 - never auto-send an ambiguous recipient, low-confidence transcript, or low-confidence translation.
 - do not overwrite the clipboard when transcription, language detection, targeting, or translation fails.
@@ -694,18 +788,23 @@ when Vasya sends three messages consecutively, all three translations enter the 
 | m9 — hardening | tests, logs, scaling, multi-monitor support | passes fixture and manual gameplay tests |
 | m10 — packaging | single Windows installer, first-run wizard, model/profile setup, and uninstaller | clean-machine setup verified with no Python or paid account/API |
 | m11 — distribution automation | Windows CI tests, tagged release build, checksums, and release assets | release is reproducible and downloadable from GitHub Releases |
-| m12 — second-game proof | tune one additional real game profile | foreground detection and profile/layout switching work with no core-engine fork |
+| m12 — Minecraft proof | tune Minecraft Java as the second real profile | foreground detection, resized-chat calibration, and profile/layout switching work with no core-engine fork |
 
 ## 14. performance targets
 
-- new translation displayed within 1.5 seconds of a line becoming visible on supported local hardware.
-- under 10% average CPU on a typical modern gaming PC after tuning.
+- new translation p95 displayed within 1.5 seconds of a line becoming visible on the documented balanced-hardware tier; lightweight mode p95 within 1.0 second.
+- capture/OCR averages under 10% CPU on the documented reference PC after tuning; translation spikes are measured separately.
 - bounded memory usage during multi-hour sessions.
 - no duplicate translation for a static line across consecutive frames.
 - capture and processing stop immediately when paused.
 - ordinary voice replies copied within 3 seconds after push-to-talk release on supported hardware.
 - no feedback loop where TTS announcements are transcribed as the user's reply.
 - supported-game focus changes activate the correct profile within 2 seconds without losing persisted layout state.
+- held-out STALZONE player-message recall is at least 95%; system/outbound false announcements are below 1% of classified lines.
+- a static frame sequence produces zero duplicate announcements; a legitimate identical message sent later is emitted again.
+- at least 90% of reviewed high-confidence corpus rows pass meaning, term-preservation, tone, and no-invention checks; low-confidence rows are reported separately.
+
+performance claims must name the CPU, GPU, RAM, model, capture interval, resolution, and sample size. `supported hardware` is not declared until those measurements exist.
 
 ## 15. testing strategy
 
@@ -731,21 +830,25 @@ when Vasya sends three messages consecutively, all three translations enter the 
 - manual tests for fullscreen-windowed mode, DPI scaling, multiple monitors, alt-tab, and game minimization.
 - packaging smoke test on a Windows machine without Python installed.
 
-## 16. decisions still needed
+## 16. locked defaults and runtime facts still required
 
-these should be resolved with real screenshots and user preference before their milestone begins:
+defaults are locked so implementation does not pause for cosmetic choices:
 
-1. exact stalzone resolution, display scaling, and fullscreen mode.
-2. user's CPU, GPU, VRAM, and RAM, which determine the default local translation model.
-3. whether translations should include the original source-language line.
-4. translation-window position, number of visible lines, font size, and opacity.
-5. whether TTS should read every translated line or only lines matching filters.
-6. whether player names and faction/channel labels use consistent colors that preprocessing can exploit.
-7. final hold-to-talk key after checking stalzone's existing bindings; `V` is the current candidate.
-8. public product name, icon, and application ID.
-9. which second game should validate the profile system after stalzone.
-10. open-source license and contribution policy before accepting outside contributors.
-11. exact STALZONE executable name, window class, and title observed on the user's Windows PC; do not guess these identifiers.
+- working product name: `Game Chat Translator`; Python package: `game_chat_translator`; Windows application ID: `com.kazoogh.gamechattranslator`.
+- license: Apache-2.0 for original project code; every downloaded model/data dependency keeps its own displayed license and must pass redistribution review.
+- translation window shows natural English by default; source text and literal/debug output stay in the expandable detail/history view.
+- TTS reads every inbound player message by default and never reads system/outbound/unknown lines unless the user changes filters.
+- translation window starts top-right, remains movable/resizable, and persists its geometry per display layout.
+- `V` is the initial hold-to-talk default, remains configurable, and triggers a conflict warning when shared with the active game.
+- STALZONE and Minecraft Java are the first two tuned profiles.
+- no telemetry, cloud sync, automatic sending, or persistent message history is enabled by default.
+
+the following are observed facts, not architecture decisions, and do not block repository scaffolding:
+
+1. target PC CPU, GPU, VRAM, RAM, Windows version, and available disk space.
+2. actual STALZONE executable name, window class/title, display resolution, DPI scaling, window mode, and UI scale.
+3. representative uncropped/cropped screenshots showing player, outbound, system, item-link, wrapped, and scrolling chat.
+4. Minecraft Java process/window metadata and screenshots from its default chat plus at least one resized/custom-scale layout.
 
 ## 17. fixture ingestion
 
@@ -767,7 +870,9 @@ the initial text-only STALZONE assets are versioned separately from screenshots:
 
 ## 18. immediate next step
 
-collect 10–20 uncropped stalzone screenshots at the user's actual resolution, covering:
+begin build slice 0 from `BUILD_PLAN.md`: repository scaffold, typed domain contracts, config/storage migrations, data validators, and Windows CI. this work can begin without additional user input.
+
+in parallel, collect 10–20 uncropped STALZONE screenshots at the user's actual resolution, covering:
 
 - Russian, English, Turkish, and other encountered languages.
 - mixed-language and transliterated messages.
@@ -780,7 +885,7 @@ collect 10–20 uncropped stalzone screenshots at the user's actual resolution, 
 
 these become the permanent OCR fixture set and determine preprocessing and deduplication thresholds for m1.
 
-after the stalzone profile reaches acceptable accuracy, create one second-game fixture set to prove that profiles are genuinely modular before advertising broad game support.
+also collect a smaller Minecraft Java fixture set. screenshots improve OCR tuning but are not required to start the core implementation.
 
 ## 19. architecture decision log
 
@@ -816,3 +921,10 @@ after the stalzone profile reaches acceptable accuracy, create one second-game f
 | 2026-08-20 | OCR preview before saving calibration | users can correct a bad region before background monitoring begins |
 | 2026-08-20 | layered live glossary learning | bundled data remains reproducible while the app learns personal aliases and languages locally |
 | 2026-08-20 | evidence-gated automatic activation | repeated high-confidence aliases may activate automatically; new or ambiguous meanings require confirmation to prevent glossary poisoning |
+| 2026-08-20 | embedded `llama.cpp`-compatible provider instead of required Ollama | the release must work without asking normal users to install or manage a separate local-model service |
+| 2026-08-20 | JSON configuration plus migrated SQLite state | settings stay readable while learned terms, calibrations, and model metadata update transactionally |
+| 2026-08-20 | Windows SAPI for default TTS | provides a free offline voice already available on the target platform |
+| 2026-08-20 | Minecraft Java as second v1 profile | its resizable chat proves that calibration/profile abstractions are not STALZONE-specific |
+| 2026-08-20 | Apache-2.0 project license | permissive reuse plus an explicit patent grant fits a public extensible desktop project |
+| 2026-08-20 | checksummed manual updates before self-update | avoids unsafe silent replacement and does not imply paid code signing is already available |
+| 2026-08-20 | build-ready typed runtime contracts | implementation slices share stable events, lifecycle states, fallbacks, and ownership rules |
