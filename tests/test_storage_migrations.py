@@ -4,7 +4,7 @@ from pathlib import Path
 from uuid import UUID
 
 from game_chat_translator.models import ChatRegion
-from game_chat_translator.storage.database import Database
+from game_chat_translator.storage.database import Database, bundled_migrations
 from game_chat_translator.storage.repositories import SqliteStateRepository
 
 
@@ -14,9 +14,12 @@ def test_migrations_are_repeatable_and_enable_required_pragmas(tmp_path: Path) -
         connection = database.open()
         assert connection.execute("PRAGMA journal_mode").fetchone()[0] == "wal"
         assert connection.execute("PRAGMA foreign_keys").fetchone()[0] == 1
-        assert connection.execute("SELECT COUNT(*) FROM schema_migrations").fetchone()[0] == 1
+        expected = len(bundled_migrations())
+        count = connection.execute("SELECT COUNT(*) FROM schema_migrations").fetchone()[0]
+        assert count == expected
         database.migrate()
-        assert connection.execute("SELECT COUNT(*) FROM schema_migrations").fetchone()[0] == 1
+        count = connection.execute("SELECT COUNT(*) FROM schema_migrations").fetchone()[0]
+        assert count == expected
 
 
 def test_calibration_repository_round_trip(tmp_path: Path) -> None:

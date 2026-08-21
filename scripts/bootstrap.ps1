@@ -9,12 +9,12 @@ $repoRoot = Split-Path -Parent $PSScriptRoot
 Set-Location -LiteralPath $repoRoot
 
 if (-not (Get-Command python -ErrorAction SilentlyContinue)) {
-    throw 'Python 3.12 or 3.13 is required. Install Python from python.org, then rerun this script.'
+    throw 'Python 3.12 is required. Install Python from python.org, then rerun this script.'
 }
 
 $pythonVersion = & python -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')"
-if ($pythonVersion -notin @('3.12', '3.13')) {
-    throw "Python 3.12 or 3.13 is required; found $pythonVersion."
+if ($pythonVersion -ne '3.12') {
+    throw "Python 3.12 is required; found $pythonVersion."
 }
 
 if (-not (Get-Command uv -ErrorAction SilentlyContinue)) {

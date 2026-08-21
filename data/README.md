@@ -6,6 +6,8 @@ this directory contains versioned, human-reviewed language assets used by game p
 
 - `glossaries/stalzone.v1.json`: canonical STALZONE terms and observed aliases.
 - `corpora/stalzone.translation.v1.jsonl`: one JSON object per translation example.
+- `models/manifest.v1.json`: fixed URLs, sizes, SHA-256 digests, licenses, language coverage,
+  and hardware tiers for explicitly downloadable local GGUF models.
 
 the corpus is evaluation and prompt-example data. it is not automatically used for model training. public rows must not contain private screenshots, account identifiers, or unnecessary player-name annotations.
 

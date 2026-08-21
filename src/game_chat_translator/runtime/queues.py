@@ -12,6 +12,7 @@ class OfferResult(StrEnum):
     REPLACED_STALE = "replaced_stale"
     REJECTED_FULL = "rejected_full"
     REJECTED_OBSOLETE = "rejected_obsolete"
+    REJECTED_CANCELLED = "rejected_cancelled"
 
 
 class LatestValueQueue[T]:

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import unicodedata
 from typing import Literal
 
@@ -75,14 +76,23 @@ class CorpusRow(DataModel):
 
 class ModelEntry(DataModel):
     model_id: str = Field(pattern=r"^[a-z0-9]+(?:[._-][a-z0-9]+)*$")
-    provider: str
-    languages: tuple[str, ...] = Field(min_length=1)
+    provider: Literal["llama_cpp", "argos", "fasttext", "paddleocr"]
+    languages: tuple[str, ...] = Field(min_length=1, max_length=32)
     hardware_tier: Literal["cpu_low", "cpu_balanced", "gpu"]
     size_bytes: int = Field(gt=0)
-    license_id: str
+    license_id: str = Field(min_length=1, max_length=100, pattern=r"^[A-Za-z0-9.+-]+$")
     source_url: HttpUrl
     sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     bundled: bool = False
+
+    @field_validator("languages")
+    @classmethod
+    def languages_are_unique_codes(cls, values: tuple[str, ...]) -> tuple[str, ...]:
+        if len(values) != len(set(values)) or any(
+            not re.fullmatch(r"[a-z]{2,3}(?:-[A-Z]{2})?", value) for value in values
+        ):
+            raise ValueError("model languages must be unique language codes")
+        return values
 
 
 class ModelManifest(DataModel):

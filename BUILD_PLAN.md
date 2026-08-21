@@ -4,9 +4,11 @@ status: ready to execute
 target: Windows 10/11 x64  
 delivery strategy: small vertical pull requests with tests and runnable checkpoints
 
-implementation status: slices 0–1 completed on 2026-08-20; slices 2–7 remain in progress. Portable
-gates pass on the local Windows Python 3.13 environment and are configured for Python 3.12 on
-Windows/Linux CI; the slice-1 optional Qt/capture gate runs separately on Windows.
+implementation status: slices 0–4 completed through 2026-08-21; slices 5–7 remain in progress.
+Portable gates and optional native-provider jobs target Python 3.12 on Windows/Linux CI. Real-game
+OCR/classification evidence and real-model translation-quality acceptance remain explicitly
+provisional until the privacy-reviewed fixtures and downloaded models documented by each slice are
+available; deterministic implementation gates remain mandatory.
 
 ## execution rules
 

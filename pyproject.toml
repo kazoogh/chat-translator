@@ -7,7 +7,7 @@ name = "game-chat-translator"
 version = "0.1.0"
 description = "Offline-first Windows game chat translator"
 readme = "README.md"
-requires-python = ">=3.12,<3.14"
+requires-python = ">=3.12,<3.13"
 license = { file = "LICENSE" }
 authors = [{ name = "kazoogh" }]
 dependencies = [
@@ -39,6 +39,10 @@ ui = [
 language = [
   "fasttext-wheel==0.9.2; python_version == '3.12'",
 ]
+translation = [
+  "argostranslate==1.11.0",
+  "llama-cpp-python @ https://github.com/abetlen/llama-cpp-python/releases/download/v0.3.19/llama_cpp_python-0.3.19-cp312-cp312-win_amd64.whl#sha256=1843b30d90e35296dbd9bd0b2b753b42f0fafa6aec6d2b1c0fff352f801bc89b ; sys_platform == 'win32' and python_version == '3.12'",
+]
 vision = [
   "numpy==2.2.6",
   "opencv-contrib-python==4.10.0.84",
@@ -54,14 +58,23 @@ game-chat-translator = "game_chat_translator.__main__:main"
 gct-validate = "game_chat_translator.validation.cli:main"
 gct-diagnostics = "game_chat_translator.diagnostics:main"
 
+[tool.hatch.metadata]
+allow-direct-references = true
+
 [tool.hatch.build.targets.wheel]
 packages = ["src/game_chat_translator"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"data" = "game_chat_translator/resources/data"
+"profiles" = "game_chat_translator/resources/profiles"
+"THIRD_PARTY_NOTICES.md" = "game_chat_translator/resources/THIRD_PARTY_NOTICES.md"
 
 [tool.pytest.ini_options]
 addopts = "--strict-config --strict-markers -ra"
 testpaths = ["tests"]
 markers = [
   "language: requires the pinned local fastText language extra",
+  "translation_native: requires pinned Argos and llama.cpp translation extras",
   "vision: requires the pinned OCR/vision extra",
   "windows_ui: optional native Windows/Qt calibration tests",
 ]
@@ -88,6 +101,8 @@ module = [
   "numpy",
   "paddleocr",
   "fasttext",
+  "argostranslate.*",
+  "llama_cpp",
   "PySide6.*",
   "win32api",
   "win32gui",
