@@ -203,6 +203,21 @@ this avoids the main flaw in the minimal prototype: a permanent `seen` set would
 - support multiple layouts per game, such as `default`, `large-chat`, `ultrawide`, or user-named presets.
 - account for resizable chat boxes such as Minecraft by treating coordinates as user-specific profile state.
 
+### `region_calibrator`
+
+- launch from the dashboard's `Calibrate Chat Area` action or first-run wizard.
+- capture one frozen screenshot of the active game window or selected monitor through the normal capture backend.
+- display the frozen frame in a borderless clipping interface rather than injecting an overlay into the game.
+- dim everything outside the selected rectangle and use a crosshair cursor while drawing.
+- support click-drag creation, move, resize handles, keyboard nudging, Reset, Cancel/Escape, and Save/Enter.
+- show the selected crop at enlarged scale alongside live preprocessing and sample OCR output.
+- require a non-empty region and warn when no likely chat text is detected, while still allowing an explicit save.
+- encourage calibration while several representative player and system messages are visible.
+- store normalized client-area coordinates plus the original client size, monitor, DPI scale, and profile/layout IDs.
+- convert normalized client coordinates back to screen coordinates whenever the game window moves or resizes.
+- preserve separate calibrations for fullscreen, borderless, windowed, ultrawide, and user-named layouts.
+- never save the calibration screenshot by default; retain it only when the user explicitly adds it as a diagnostic fixture.
+
 ### `translator`
 
 - detect language per message rather than assuming Russian.
@@ -368,7 +383,8 @@ chat-translator/
 │       ├── detection/
 │       │   ├── foreground_window.py
 │       │   ├── game_detector.py
-│       │   └── layout_resolver.py
+│       │   ├── layout_resolver.py
+│       │   └── region_calibrator.py
 │       ├── translation/
 │       │   ├── base.py
 │       │   ├── ollama_local.py
@@ -390,6 +406,8 @@ chat-translator/
 │       └── ui/
 │           ├── main_window.py
 │           ├── region_selector.py
+│           ├── calibration_window.py
+│           ├── calibration_preview.py
 │           ├── translation_window.py
 │           ├── dashboard.py
 │           ├── profile_editor.py
@@ -407,6 +425,7 @@ chat-translator/
 │   ├── test_profile_loader.py
 │   ├── test_game_detector.py
 │   ├── test_layout_resolver.py
+│   ├── test_region_calibrator.py
 │   ├── test_speaker_tracker.py
 │   ├── test_voice_commands.py
 │   ├── test_reply_controller.py
@@ -455,7 +474,8 @@ chat-translator/
     "top": 930,
     "width": 650,
     "height": 130,
-    "interval_ms": 500
+    "interval_ms": 500,
+    "region_coordinate_space": "game_client_normalized"
   },
   "ocr": {
     "scripts": ["cyrillic", "latin"],
@@ -554,6 +574,19 @@ chat-translator/
 - the bootstrap script validates prerequisites, creates an isolated environment, installs pinned dependencies, installs the application for the current user, and reports the launch command.
 - source installation is a developer/contributor path; normal users should download the release installer.
 
+### chat-region calibration flow
+
+1. pause live OCR and resolve the active game/profile.
+2. take one frozen screenshot of the game client or selected monitor.
+3. open the clipping interface over the frozen screenshot.
+4. let the user drag, move, and resize a rectangle around the complete chat region.
+5. show an enlarged crop, preprocessing variants, and detected OCR lines.
+6. let the user retry the screenshot, reset the rectangle, cancel, or save.
+7. save coordinates normalized to the game client with resolution/DPI/layout metadata.
+8. resume OCR using the saved layout and confirm with a short `chat area calibrated` toast.
+
+the calibration interface must work across multiple monitors and Windows display scaling. absolute desktop coordinates are runtime output only and must not be the persisted source of truth.
+
 ## 9. new-line detection design
 
 1. sort OCR boxes by vertical position.
@@ -625,6 +658,7 @@ when Vasya sends three messages consecutively, all three translations enter the 
 | m0 — fixtures | representative chat screenshots plus ground-truth annotations | includes multiple languages, slang, typos, profanity, game terms, names, colors, channels, and noisy backgrounds |
 | m0.5 — profile foundation | generic profile schema, loader, validator, and stalzone profile | invalid/untrusted profile files fail safely; generic inheritance works |
 | m0.75 — game detection | foreground detector, matcher confidence, debounce, overrides, and layout resolver | switching among test windows activates the right profile/layout without recording unrelated app history |
+| m0.9 — region calibration | frozen screenshot, drag/resize selection, OCR preview, normalized persistence, and retry/reset/cancel | saved region follows the game window and survives supported resolution/DPI changes |
 | m1 — OCR CLI | crop screenshot and print ordered lines | target messages are readable on fixture set |
 | m2 — live detector | capture region and emit only new lines | no repeats while unchanged; repeated messages work later |
 | m3 — classification | separate inbound player, outbound player, system, and unknown lines | system/outbound fixtures remain silent; inbound fixtures are not missed |
@@ -663,6 +697,7 @@ when Vasya sends three messages consecutively, all three translations enter the 
 - key-down/key-up tests for hold recording, accidental taps, autorepeat, focus changes, and a key shared with game controls.
 - foreground-window fixtures covering exact matches, generic process hosts, title changes, multiple running games, rapid alt-tab, DPI changes, and unknown applications.
 - layout-resolution tests covering 16:9, ultrawide, windowed mode, moved/resized windows, and user-resizable chat boxes.
+- calibration tests covering drag directions, resize handles, keyboard nudging, cancel/reset, invalid rectangles, OCR preview failure, multi-monitor coordinates, and DPI scaling.
 - offline test with outbound networking blocked; every core workflow must still pass.
 - manual tests for fullscreen-windowed mode, DPI scaling, multiple monitors, alt-tab, and game minimization.
 - packaging smoke test on a Windows machine without Python installed.
@@ -740,3 +775,6 @@ after the stalzone profile reaches acceptable accuracy, create one second-game f
 | 2026-08-20 | per-game per-layout calibration | chat geometry varies by resolution, UI scale, window mode, and user customization |
 | 2026-08-20 | profile-switch debounce and manual override | avoids alt-tab thrashing and gives users control when detection is ambiguous |
 | 2026-08-20 | GitHub Releases plus one-command source bootstrap | end users get an installer while contributors get a repeatable setup path |
+| 2026-08-20 | frozen-screenshot clipping calibration | familiar screenshot-style selection avoids injection and gives deterministic visual feedback |
+| 2026-08-20 | normalized client-relative chat coordinates | saved layouts remain usable when windows move and can adapt to proportional size changes |
+| 2026-08-20 | OCR preview before saving calibration | users can correct a bad region before background monitoring begins |
