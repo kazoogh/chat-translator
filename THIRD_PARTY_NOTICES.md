@@ -28,8 +28,27 @@ reviewed before every release artifact is published.
 | Pillow | 12.3.0 | HPND | https://python-pillow.org | transitive OCR runtime |
 | fastText wheel | 0.9.2 | MIT | https://github.com/facebookresearch/fastText | optional local language identification runtime; no model bundled |
 | pybind11 | 3.1.0 | BSD-3-Clause | https://github.com/pybind/pybind11 | transitive fastText binding dependency |
+| llama-cpp-python | 0.3.19 | MIT | https://github.com/abetlen/llama-cpp-python | optional contextual translation runtime; Windows cp312 x64 wheel SHA-256 `1843b30d90e35296dbd9bd0b2b753b42f0fafa6aec6d2b1c0fff352f801bc89b` |
+| llama.cpp | included by llama-cpp-python 0.3.19 | MIT | https://github.com/ggml-org/llama.cpp | native transitive contextual runtime |
+| Argos Translate | 1.11.0 | MIT or CC0 | https://github.com/argosopentech/argos-translate | optional installed-package-only fallback runtime; no Argos model package redistributed |
+| CTranslate2 | 4.8.1 | MIT | https://github.com/OpenNMT/CTranslate2 | transitive Argos native runtime |
+| SentencePiece | 0.2.2 | Apache-2.0 | https://github.com/google/sentencepiece | transitive Argos tokenizer runtime |
+| Stanza | 1.10.1 | Apache-2.0 | https://github.com/stanfordnlp/stanza | transitive Argos sentence-boundary runtime |
+| spaCy | 3.8.15 | MIT | https://github.com/explosion/spaCy | transitive Argos language runtime |
+| PyTorch | 2.13.0 | BSD-3-Clause | https://github.com/pytorch/pytorch | transitive Argos/Stanza runtime |
+| diskcache | 5.6.3 | Apache-2.0 | https://github.com/grantjenks/python-diskcache | transitive llama-cpp-python runtime |
+
+Downloadable model payloads are not bundled in the wheel or installer. Explicit setup can acquire
+only the following Apache-2.0 Qwen GGUF files; the application verifies the listed byte size and
+SHA-256 before activation.
+
+| Model | Upstream revision | Size | SHA-256 | Fixed source |
+| --- | --- | ---: | --- | --- |
+| Qwen2.5 0.5B Instruct Q4_K_M | `9217f5db79a29953eb74d5343926648285ec7e67` | 491400032 | `74a4da8c9fdbcd15bd1f6d01d621410d31c6fc00986f5eb687824e7b93d7a9db` | https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct-GGUF |
+| Qwen2.5 1.5B Instruct Q4_K_M | `91cad51170dc346986eccefdc2dd33a9da36ead9` | 1117320736 | `6a1a2eb6d15622bf3c96857206351ba97e1af16c30d7a74ee38970e434e9407e` | https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF |
+| Qwen2.5 3B Instruct Q4_K_M | `7dabda4d13d513e3e842b20f0d435c732f172cbe` | 2104932768 | `626b4a6678b86442240e33df819e00132d3ba7dddfe1cdc4fbb18e0a9615c62d` | https://huggingface.co/Qwen/Qwen2.5-3B-Instruct-GGUF |
 
 The lockfile contains additional transitive development and optional-provider packages; the exact
-artifact inventory and complete upstream notice texts remain a release gate. No model payload is
-bundled at this stage. Each downloadable model requires separate source, license, size, and SHA-256
-metadata before it can appear in the allowlist.
+artifact inventory and complete upstream notice texts remain a release gate. No model payload or
+Argos language package is bundled. The built-in reviewed-corpus fallback remains available without
+native model packages; user-installed Argos packages retain their own model/data terms.
