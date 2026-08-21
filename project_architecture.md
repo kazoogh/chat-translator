@@ -27,6 +27,7 @@ build a small external desktop companion that:
 - run primarily as a background Windows tray application.
 - expose a compact dashboard for setup, status, profiles, models, hotkeys, audio, history, and diagnostics.
 - ship a generic-game profile plus individually tuned game profiles.
+- detect the currently focused supported game and activate its profile automatically.
 - keep the core capture/OCR/translation/voice pipeline game-agnostic.
 - make game-specific behavior data-driven so adding Minecraft or another game does not require forking the application.
 - distribute through one Windows installer executable that creates the installed application, tray shortcut, uninstaller, and optional startup entry.
@@ -51,6 +52,8 @@ build a small external desktop companion that:
 - generic-game profile and first-party stalzone profile.
 - profile selector and profile creation/import/export controls.
 - first-run wizard for chat-region selection, audio test, hold-to-talk key, hardware detection, and model/profile download.
+- foreground-game detection and automatic profile/layout switching.
+- saved chat-region calibrations per game, resolution, display scale, and game UI scale.
 - settings persisted locally.
 - local logs useful for debugging OCR accuracy.
 
@@ -81,6 +84,7 @@ build a small external desktop companion that:
 | text-to-speech | `pyttsx3` initially | offline and built into the local app flow |
 | UI | PySide6 | better window, tray, hotkey, and packaging support than tkinter |
 | global hotkeys | `pynput` | configurable controls outside the focused window |
+| game detection | Win32 foreground-window APIs through `pywin32` | identifies focused executable/window metadata without reading game memory |
 | reply delivery | Qt clipboard | does not simulate game input and lets the user verify the recipient/message |
 | settings | JSON via Pydantic models | typed validation without a database |
 | application packaging | PyInstaller one-folder build | bundles Python/runtime dependencies without requiring Python on the user's PC |
@@ -101,11 +105,12 @@ translation modes:
 
 ```mermaid
 flowchart TD
+    O["foreground game detector"] --> P["active game profile"]
     A["chat-region capture"] --> B["image preprocessing"]
     B --> C["PaddleOCR"]
     C --> D["line normalization"]
     D --> E["new-line detection"]
-    E --> P["active game profile"]
+    E --> P
     P --> F["language + term analysis"]
     F --> G["local contextual translation"]
     G --> H["always-on-top window"]
@@ -172,6 +177,31 @@ this avoids the main flaw in the minimal prototype: a permanent `seen` set would
 - let users create, clone, edit, import, and export profiles from the dashboard.
 - let profile updates ship independently from application releases.
 - fall back to manual region selection and conservative message classification when no tuned profile exists.
+- define executable, window-title, and window-class matchers used by automatic detection.
+- store multiple named chat-layout presets and user calibrations for different resolutions and UI scales.
+- allow a profile to declare optional visual anchors that help locate a visible chat box without assuming fixed coordinates.
+
+### `game_detector`
+
+- observe the current foreground window through documented Windows metadata APIs.
+- resolve executable name, window title, window class, monitor, client bounds, and DPI scale.
+- never read process memory, inject code, hook graphics, or inspect network traffic.
+- match only against detection rules declared by installed profiles.
+- use executable identity as the strongest signal, then window class/title for ambiguous processes.
+- handle generic hosts such as Minecraft's `javaw.exe` using window title/class plus the user's saved association.
+- switch only after the same candidate remains focused for a short debounce interval.
+- pause capture when no supported/configured game is focused unless the user pins a profile manually.
+- let the user override auto-detection, pin a profile, or disable automatic switching.
+- retain no general application-usage history and avoid logging unrelated window titles by default.
+
+### `layout_resolver`
+
+- choose a saved calibration using profile ID, monitor, client resolution, DPI scale, and game UI scale when known.
+- transform normalized chat coordinates when only window size changes proportionally.
+- validate the selected region with profile-specific colors/anchors before announcing text.
+- request a one-time drag-to-select calibration when confidence is insufficient.
+- support multiple layouts per game, such as `default`, `large-chat`, `ultrawide`, or user-named presets.
+- account for resizable chat boxes such as Minecraft by treating coordinates as user-specific profile state.
 
 ### `translator`
 
@@ -274,6 +304,7 @@ example target behavior:
 - small non-blocking clipboard toast that disappears automatically.
 - close-to-tray behavior, with a separate explicit Quit action.
 - tray menu: Pause/Resume, Mute/Unmute, active game profile, Open Dashboard, and Quit.
+- tray status shows detected game/profile and whether its chat layout is calibrated.
 - dashboard pages: Status, Capture, Profiles, Translation Models, Audio & Voice, Hotkeys, History, and Diagnostics.
 - optional `start with Windows` setting, disabled by default.
 
@@ -285,6 +316,7 @@ example target behavior:
 - provide an explicit export-debug-bundle action.
 - store installed game profiles and downloaded local models separately from the executable.
 - allow profile/model updates without replacing the main executable.
+- store user calibrations separately from shipped profiles so profile updates never overwrite local layouts.
 
 ## 6. concurrency model
 
@@ -333,6 +365,10 @@ chat-translator/
 │       │   ├── loader.py
 │       │   ├── manager.py
 │       │   └── validator.py
+│       ├── detection/
+│       │   ├── foreground_window.py
+│       │   ├── game_detector.py
+│       │   └── layout_resolver.py
 │       ├── translation/
 │       │   ├── base.py
 │       │   ├── ollama_local.py
@@ -369,12 +405,15 @@ chat-translator/
 │   ├── test_message_classifier.py
 │   ├── test_profile_schema.py
 │   ├── test_profile_loader.py
+│   ├── test_game_detector.py
+│   ├── test_layout_resolver.py
 │   ├── test_speaker_tracker.py
 │   ├── test_voice_commands.py
 │   ├── test_reply_controller.py
 │   └── test_settings.py
 ├── scripts/
 │   ├── capture_fixture.py
+│   ├── bootstrap.ps1
 │   ├── build_windows.ps1
 │   └── build_installer.ps1
 ├── installer/
@@ -389,6 +428,10 @@ chat-translator/
 │   │   └── glossary.json
 │   └── minecraft.java/
 │       └── README.md
+├── .github/
+│   └── workflows/
+│       ├── test.yml
+│       └── release-windows.yml
 └── assets/
     └── app.ico
 ```
@@ -400,7 +443,10 @@ chat-translator/
   "application": {
     "close_to_tray": true,
     "start_with_windows": false,
-    "active_profile": "stalzone.default"
+    "active_profile": "stalzone.default",
+    "auto_detect_game": true,
+    "profile_switch_debounce_ms": 1200,
+    "pause_when_no_game_focused": true
   },
   "capture": {
     "backend": "dxcam",
@@ -469,6 +515,12 @@ chat-translator/
   "profile_id": "stalzone.default",
   "display_name": "STALZONE",
   "inherits": "generic.default",
+  "detection": {
+    "executables": [],
+    "window_title_patterns": ["STALZONE"],
+    "minimum_confidence": 0.9,
+    "status": "executable_pending_verification"
+  },
   "chat": {
     "default_anchor": "bottom_left",
     "player_message_separators": [":"],
@@ -479,6 +531,10 @@ chat-translator/
   "resources": {
     "glossary": "glossary.json",
     "system_patterns": "system_patterns.json"
+  },
+  "layouts": {
+    "strategy": "user_calibration_with_profile_hints",
+    "default_anchor": "bottom_left"
   }
 }
 ```
@@ -493,6 +549,10 @@ chat-translator/
 - an optional portable build may be provided later, but the installer is the supported consumer path.
 - Windows builds run on Windows because PyInstaller is not a cross-compiler.
 - releases include installer checksum, version, changelog, and reproducible build instructions.
+- tagged releases trigger a Windows GitHub Actions workflow that runs tests, builds the application and installer, generates checksums, and attaches release assets.
+- source users clone the repository and run one documented command: `powershell -ExecutionPolicy Bypass -File .\scripts\bootstrap.ps1`.
+- the bootstrap script validates prerequisites, creates an isolated environment, installs pinned dependencies, installs the application for the current user, and reports the launch command.
+- source installation is a developer/contributor path; normal users should download the release installer.
 
 ## 9. new-line detection design
 
@@ -564,6 +624,7 @@ when Vasya sends three messages consecutively, all three translations enter the 
 | --- | --- | --- |
 | m0 — fixtures | representative chat screenshots plus ground-truth annotations | includes multiple languages, slang, typos, profanity, game terms, names, colors, channels, and noisy backgrounds |
 | m0.5 — profile foundation | generic profile schema, loader, validator, and stalzone profile | invalid/untrusted profile files fail safely; generic inheritance works |
+| m0.75 — game detection | foreground detector, matcher confidence, debounce, overrides, and layout resolver | switching among test windows activates the right profile/layout without recording unrelated app history |
 | m1 — OCR CLI | crop screenshot and print ordered lines | target messages are readable on fixture set |
 | m2 — live detector | capture region and emit only new lines | no repeats while unchanged; repeated messages work later |
 | m3 — classification | separate inbound player, outbound player, system, and unknown lines | system/outbound fixtures remain silent; inbound fixtures are not missed |
@@ -574,7 +635,8 @@ when Vasya sends three messages consecutively, all three translations enter the 
 | m8 — hold-to-talk replies | key-down record, key-up transcribe/translate/copy/toast | no network calls; clipboard unchanged on failure; nothing is auto-sent |
 | m9 — hardening | tests, logs, scaling, multi-monitor support | passes fixture and manual gameplay tests |
 | m10 — packaging | single Windows installer, first-run wizard, model/profile setup, and uninstaller | clean-machine setup verified with no Python or paid account/API |
-| m11 — second-game proof | tune one additional real game profile | no core-engine fork or game-specific code required |
+| m11 — distribution automation | Windows CI tests, tagged release build, checksums, and release assets | release is reproducible and downloadable from GitHub Releases |
+| m12 — second-game proof | tune one additional real game profile | foreground detection and profile/layout switching work with no core-engine fork |
 
 ## 14. performance targets
 
@@ -585,6 +647,7 @@ when Vasya sends three messages consecutively, all three translations enter the 
 - capture and processing stop immediately when paused.
 - ordinary voice replies copied within 3 seconds after push-to-talk release on supported hardware.
 - no feedback loop where TTS announcements are transcribed as the user's reply.
+- supported-game focus changes activate the correct profile within 2 seconds without losing persisted layout state.
 
 ## 15. testing strategy
 
@@ -598,6 +661,8 @@ when Vasya sends three messages consecutively, all three translations enter the 
 - clipboard tests proving that drafts copy but are never pasted or sent automatically.
 - ordered-queue tests with several consecutive player messages plus interleaved system messages.
 - key-down/key-up tests for hold recording, accidental taps, autorepeat, focus changes, and a key shared with game controls.
+- foreground-window fixtures covering exact matches, generic process hosts, title changes, multiple running games, rapid alt-tab, DPI changes, and unknown applications.
+- layout-resolution tests covering 16:9, ultrawide, windowed mode, moved/resized windows, and user-resizable chat boxes.
 - offline test with outbound networking blocked; every core workflow must still pass.
 - manual tests for fullscreen-windowed mode, DPI scaling, multiple monitors, alt-tab, and game minimization.
 - packaging smoke test on a Windows machine without Python installed.
@@ -615,6 +680,8 @@ these should be resolved with real screenshots and user preference before their 
 7. final hold-to-talk key after checking stalzone's existing bindings; `V` is the current candidate.
 8. public product name, icon, and application ID.
 9. which second game should validate the profile system after stalzone.
+10. open-source license and contribution policy before accepting outside contributors.
+11. exact STALZONE executable name, window class, and title observed on the user's Windows PC; do not guess these identifiers.
 
 ## 17. fixture ingestion
 
@@ -669,3 +736,7 @@ after the stalzone profile reaches acceptable accuracy, create one second-game f
 | 2026-08-20 | installer instead of giant model-bundled executable | one setup executable preserves easy installation while models remain replaceable and hardware-selectable |
 | 2026-08-20 | game-agnostic core plus profiles | stalzone, Minecraft, and future games share one engine and differ through validated data packages |
 | 2026-08-20 | generic profile fallback | unsupported games remain usable through manual region selection and conservative classification |
+| 2026-08-20 | foreground-window game detection | normal Windows metadata can select profiles without memory reading or injection |
+| 2026-08-20 | per-game per-layout calibration | chat geometry varies by resolution, UI scale, window mode, and user customization |
+| 2026-08-20 | profile-switch debounce and manual override | avoids alt-tab thrashing and gives users control when detection is ambiguous |
+| 2026-08-20 | GitHub Releases plus one-command source bootstrap | end users get an installer while contributors get a repeatable setup path |
