@@ -86,7 +86,7 @@ def create_translation_window(
 
         @property
         def message_count(self) -> int:
-            return max(0, self._rows.count() - 1)
+            return max(0, int(self._rows.count()) - 1)
 
         def moveEvent(self, event: QMoveEvent) -> None:
             super().moveEvent(event)

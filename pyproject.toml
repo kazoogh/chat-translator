@@ -121,3 +121,12 @@ ignore_missing_imports = true
 [[tool.mypy.overrides]]
 module = ["game_chat_translator.ui.region_selector"]
 warn_unused_ignores = false
+
+[[tool.mypy.overrides]]
+module = [
+  "game_chat_translator.desktop",
+  "game_chat_translator.ui.dashboard",
+  "game_chat_translator.ui.tray",
+  "game_chat_translator.ui.translation_window",
+]
+disable_error_code = ["misc"]
