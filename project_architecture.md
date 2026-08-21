@@ -1,8 +1,8 @@
-# stalzone chat translator — project architecture
+# game chat translator — project architecture
 
 status: planning  
 target platform: windows 10/11  
-primary use case: detect and translate multilingual stalzone chat into natural gamer english, preserving slang, tone, profanity, game terminology, names, and formatting, then display and optionally read it aloud.
+primary use case: detect and translate multilingual in-game chat into natural gamer english, preserving slang, tone, profanity, game terminology, names, and formatting, then display and optionally read it aloud. stalzone is the first fully tuned game profile, not a permanent limitation of the core engine.
 
 cost constraint: the complete default application must operate locally with free/open-source components and no paid APIs, subscriptions, accounts, or per-message charges.
 
@@ -22,11 +22,22 @@ build a small external desktop companion that:
 - lets the user speak a reply, translates it into the selected player's language, and copies the result to the clipboard.
 - never reads game memory, injects code, hooks rendering, or automates game input.
 
+### product direction
+
+- run primarily as a background Windows tray application.
+- expose a compact dashboard for setup, status, profiles, models, hotkeys, audio, history, and diagnostics.
+- ship a generic-game profile plus individually tuned game profiles.
+- keep the core capture/OCR/translation/voice pipeline game-agnostic.
+- make game-specific behavior data-driven so adding Minecraft or another game does not require forking the application.
+- distribute through one Windows installer executable that creates the installed application, tray shortcut, uninstaller, and optional startup entry.
+
 ## 2. v1 scope
 
 ### included
 
 - windows desktop application.
+- system-tray process that continues working while the dashboard is closed.
+- dashboard that can be reopened from the tray icon.
 - one-time drag-to-select chat region, with manual coordinate editing.
 - capture every 400–750 ms while enabled.
 - image preprocessing tuned for stalzone chat.
@@ -37,6 +48,9 @@ build a small external desktop companion that:
 - start/stop, mute/unmute, and clear-history hotkeys.
 - hold-to-talk voice replies with speaker/language targeting and clipboard output.
 - reply preview, copy confirmation, and easy correction before pasting into the game.
+- generic-game profile and first-party stalzone profile.
+- profile selector and profile creation/import/export controls.
+- first-run wizard for chat-region selection, audio test, hold-to-talk key, hardware detection, and model/profile download.
 - settings persisted locally.
 - local logs useful for debugging OCR accuracy.
 
@@ -50,6 +64,7 @@ build a small external desktop companion that:
 - paid translation, speech, or language-model APIs.
 - automatically clicking player names, opening chat, pasting, or pressing Enter.
 - packaging through the Microsoft Store.
+- tuned built-in profiles for games other than stalzone.
 
 ## 3. recommended stack
 
@@ -68,7 +83,8 @@ build a small external desktop companion that:
 | global hotkeys | `pynput` | configurable controls outside the focused window |
 | reply delivery | Qt clipboard | does not simulate game input and lets the user verify the recipient/message |
 | settings | JSON via Pydantic models | typed validation without a database |
-| packaging | PyInstaller | produces a distributable Windows executable |
+| application packaging | PyInstaller one-folder build | bundles Python/runtime dependencies without requiring Python on the user's PC |
+| installer | Inno Setup | produces one familiar Windows setup executable with shortcuts and uninstall support |
 | tests | pytest | unit and integration coverage |
 
 the OCR, language-identification, translation, glossary, and speech engines will sit behind interfaces. providers can be replaced without changing capture, line tracking, or the UI.
@@ -89,7 +105,8 @@ flowchart TD
     B --> C["PaddleOCR"]
     C --> D["line normalization"]
     D --> E["new-line detection"]
-    E --> F["language + term analysis"]
+    E --> P["active game profile"]
+    P --> F["language + term analysis"]
     F --> G["local contextual translation"]
     G --> H["always-on-top window"]
     G --> I["speaker announcement"]
@@ -145,6 +162,16 @@ this avoids the main flaw in the minimal prototype: a permanent `seen` set would
 - suppress the user's own outgoing messages.
 - default uncertain lines to visible-but-silent instead of reading likely system noise aloud.
 - expose a diagnostic action to mark a false classification and improve fixture coverage.
+
+### `game_profile`
+
+- define each game's chat layouts, colors, separators, direction markers, username rules, system-message patterns, glossary, preprocessing presets, and crop hints.
+- use a versioned manifest schema with a stable profile ID such as `stalzone.default` or `minecraft.java`.
+- inherit from `generic.default` so every profile needs to specify only its differences.
+- keep profiles as data files; no profile may execute arbitrary code.
+- let users create, clone, edit, import, and export profiles from the dashboard.
+- let profile updates ship independently from application releases.
+- fall back to manual region selection and conservative message classification when no tuned profile exists.
 
 ### `translator`
 
@@ -245,13 +272,19 @@ example target behavior:
 - visible last-speaker target and detected language.
 - reply transcript, translated draft, copy status, and retry/edit controls.
 - small non-blocking clipboard toast that disappears automatically.
+- close-to-tray behavior, with a separate explicit Quit action.
+- tray menu: Pause/Resume, Mute/Unmute, active game profile, Open Dashboard, and Quit.
+- dashboard pages: Status, Capture, Profiles, Translation Models, Audio & Voice, Hotkeys, History, and Diagnostics.
+- optional `start with Windows` setting, disabled by default.
 
 ### `storage`
 
-- store settings in `%APPDATA%/StalzoneChatTranslator/config.json`.
+- store settings in `%APPDATA%/ChatTranslator/config.json`.
 - keep normal operation local and ephemeral.
 - write rotating diagnostic logs with no screenshots by default.
 - provide an explicit export-debug-bundle action.
+- store installed game profiles and downloaded local models separately from the executable.
+- allow profile/model updates without replacing the main executable.
 
 ## 6. concurrency model
 
@@ -272,13 +305,13 @@ the UI thread must never run OCR, translation, or TTS directly.
 ## 7. proposed repository layout
 
 ```text
-stalzone-chat-translator/
+chat-translator/
 ├── README.md
 ├── project_architecture.md
 ├── pyproject.toml
 ├── requirements.lock
 ├── src/
-│   └── stalzone_translator/
+│   └── game_chat_translator/
 │       ├── __main__.py
 │       ├── app.py
 │       ├── models.py
@@ -295,6 +328,11 @@ stalzone-chat-translator/
 │       │   ├── detector.py
 │       │   ├── mixed_script.py
 │       │   └── glossary.py
+│       ├── profiles/
+│       │   ├── schema.py
+│       │   ├── loader.py
+│       │   ├── manager.py
+│       │   └── validator.py
 │       ├── translation/
 │       │   ├── base.py
 │       │   ├── ollama_local.py
@@ -317,6 +355,9 @@ stalzone-chat-translator/
 │           ├── main_window.py
 │           ├── region_selector.py
 │           ├── translation_window.py
+│           ├── dashboard.py
+│           ├── profile_editor.py
+│           ├── first_run_wizard.py
 │           └── tray.py
 ├── tests/
 │   ├── fixtures/
@@ -326,23 +367,41 @@ stalzone-chat-translator/
 │   ├── test_glossary.py
 │   ├── test_translation.py
 │   ├── test_message_classifier.py
+│   ├── test_profile_schema.py
+│   ├── test_profile_loader.py
 │   ├── test_speaker_tracker.py
 │   ├── test_voice_commands.py
 │   ├── test_reply_controller.py
 │   └── test_settings.py
 ├── scripts/
 │   ├── capture_fixture.py
-│   └── build_windows.ps1
+│   ├── build_windows.ps1
+│   └── build_installer.ps1
+├── installer/
+│   └── chat-translator.iss
+├── profiles/
+│   ├── generic.default/
+│   │   ├── profile.json
+│   │   └── glossary.json
+│   ├── stalzone.default/
+│   │   ├── profile.json
+│   │   ├── system_patterns.json
+│   │   └── glossary.json
+│   └── minecraft.java/
+│       └── README.md
 └── assets/
-    ├── app.ico
-    └── glossary/
-        └── stalzone.en.json
+    └── app.ico
 ```
 
 ## 8. configuration model
 
 ```json
 {
+  "application": {
+    "close_to_tray": true,
+    "start_with_windows": false,
+    "active_profile": "stalzone.default"
+  },
   "capture": {
     "backend": "dxcam",
     "monitor": 0,
@@ -356,7 +415,7 @@ stalzone-chat-translator/
     "scripts": ["cyrillic", "latin"],
     "preferred_languages": ["ru", "en", "tr"],
     "minimum_confidence": 0.45,
-    "preprocess_profile": "stalzone_default"
+    "preprocess_profile": "profile_default"
   },
   "translation": {
     "enabled": true,
@@ -368,7 +427,7 @@ stalzone-chat-translator/
     "context_messages": 6,
     "preserve_profanity": true,
     "show_literal_translation": false,
-    "glossary": "stalzone.en"
+    "glossary": "profile_default"
   },
   "reply": {
     "enabled": true,
@@ -401,6 +460,39 @@ stalzone-chat-translator/
   }
 }
 ```
+
+### game-profile manifest example
+
+```json
+{
+  "schema_version": 1,
+  "profile_id": "stalzone.default",
+  "display_name": "STALZONE",
+  "inherits": "generic.default",
+  "chat": {
+    "default_anchor": "bottom_left",
+    "player_message_separators": [":"],
+    "direction_markers": ["->"],
+    "announce_outbound": false,
+    "announce_system": false
+  },
+  "resources": {
+    "glossary": "glossary.json",
+    "system_patterns": "system_patterns.json"
+  }
+}
+```
+
+### distribution model
+
+- public download is a single signed-ready installer such as `ChatTranslator-Setup-x64.exe`.
+- the installer contains the desktop application and lightweight generic/stalzone profiles.
+- the first-run wizard downloads only the free local models selected for the user's hardware.
+- downloaded models live in application data and are shared across game profiles.
+- normal operation remains offline after required models are installed.
+- an optional portable build may be provided later, but the installer is the supported consumer path.
+- Windows builds run on Windows because PyInstaller is not a cross-compiler.
+- releases include installer checksum, version, changelog, and reproducible build instructions.
 
 ## 9. new-line detection design
 
@@ -471,16 +563,18 @@ when Vasya sends three messages consecutively, all three translations enter the 
 | milestone | deliverable | completion test |
 | --- | --- | --- |
 | m0 — fixtures | representative chat screenshots plus ground-truth annotations | includes multiple languages, slang, typos, profanity, game terms, names, colors, channels, and noisy backgrounds |
+| m0.5 — profile foundation | generic profile schema, loader, validator, and stalzone profile | invalid/untrusted profile files fail safely; generic inheritance works |
 | m1 — OCR CLI | crop screenshot and print ordered lines | target messages are readable on fixture set |
 | m2 — live detector | capture region and emit only new lines | no repeats while unchanged; repeated messages work later |
 | m3 — classification | separate inbound player, outbound player, system, and unknown lines | system/outbound fixtures remain silent; inbound fixtures are not missed |
 | m4 — language and glossary | detect language and protect canonical terms | mixed Russian/English/Turkish fixtures resolve correctly |
 | m5 — local contextual translation | translate into natural gamer English without network calls | slang, tone, profanity, and game-term rubric passes |
-| m6 — desktop UI | selector, translation window, tray, settings | usable without editing source or JSON |
+| m6 — desktop shell | tray process, dashboard, selector, profile manager, model manager, and settings | closing dashboard keeps tray service running; explicit Quit stops it |
 | m7 — inbound speech | announce `<player> said: <translation>` | every consecutive player message is spoken in order; system/outbound lines stay silent |
 | m8 — hold-to-talk replies | key-down record, key-up transcribe/translate/copy/toast | no network calls; clipboard unchanged on failure; nothing is auto-sent |
 | m9 — hardening | tests, logs, scaling, multi-monitor support | passes fixture and manual gameplay tests |
-| m10 — packaging | Windows installer and model setup | clean-machine setup verified with no paid account/API |
+| m10 — packaging | single Windows installer, first-run wizard, model/profile setup, and uninstaller | clean-machine setup verified with no Python or paid account/API |
+| m11 — second-game proof | tune one additional real game profile | no core-engine fork or game-specific code required |
 
 ## 14. performance targets
 
@@ -519,6 +613,8 @@ these should be resolved with real screenshots and user preference before their 
 5. whether TTS should read every translated line or only lines matching filters.
 6. whether player names and faction/channel labels use consistent colors that preprocessing can exploit.
 7. final hold-to-talk key after checking stalzone's existing bindings; `V` is the current candidate.
+8. public product name, icon, and application ID.
+9. which second game should validate the profile system after stalzone.
 
 ## 17. fixture ingestion
 
@@ -546,6 +642,8 @@ collect 10–20 uncropped stalzone screenshots at the user's actual resolution, 
 
 these become the permanent OCR fixture set and determine preprocessing and deduplication thresholds for m1.
 
+after the stalzone profile reaches acceptable accuracy, create one second-game fixture set to prove that profiles are genuinely modular before advertising broad game support.
+
 ## 19. architecture decision log
 
 | date | decision | rationale |
@@ -567,3 +665,7 @@ these become the permanent OCR fixture set and determine preprocessing and dedup
 | 2026-08-20 | inbound-player-only announcements | system messages and the user's own messages should stay silent |
 | 2026-08-20 | ordered speech queue | every consecutive player message must be read exactly once and in order |
 | 2026-08-20 | hold-to-talk key lifecycle | key-down records; key-up transcribes, translates, copies, and confirms with a toast |
+| 2026-08-20 | tray-first Windows application | background behavior is primary; dashboard is configuration and diagnostics |
+| 2026-08-20 | installer instead of giant model-bundled executable | one setup executable preserves easy installation while models remain replaceable and hardware-selectable |
+| 2026-08-20 | game-agnostic core plus profiles | stalzone, Minecraft, and future games share one engine and differ through validated data packages |
+| 2026-08-20 | generic profile fallback | unsupported games remain usable through manual region selection and conservative classification |
