@@ -4,10 +4,11 @@ an offline-first Windows tray application that watches a user-calibrated in-game
 
 ## status
 
-build slice 0 is implemented: typed runtime contracts, recoverable versioned settings, SQLite
-migrations, validated data/profile foundations, portable CI, and privacy-redacted diagnostics are
-available. Windows capture, OCR, translation, desktop UI, voice, and release packaging are built in
-the subsequent slices in [`BUILD_PLAN.md`](BUILD_PLAN.md).
+build slices 0–1 are implemented: typed foundations, recoverable persistence, validated profiles,
+documented Win32 foreground metadata, calibrated-region capture with fallback, profile debounce,
+layout compatibility checks, and the frozen-screenshot calibration interface are available. OCR,
+translation, the complete tray/dashboard, voice, and release packaging are built in the subsequent
+slices in [`BUILD_PLAN.md`](BUILD_PLAN.md).
 
 ## product boundaries
 

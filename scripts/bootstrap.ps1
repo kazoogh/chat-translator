@@ -37,7 +37,7 @@ Invoke-Uv run gct-validate $repoRoot
 Invoke-Uv run ruff format --check .
 Invoke-Uv run ruff check .
 Invoke-Uv run mypy
-Invoke-Uv run pytest
+Invoke-Uv run pytest -m 'not windows_ui'
 
 if (-not $SkipPreCommit) {
     Invoke-Uv run pre-commit install

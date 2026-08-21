@@ -27,6 +27,13 @@ windows = [
   "psutil==7.0.0; sys_platform == 'win32'",
   "pywin32==311; sys_platform == 'win32'",
 ]
+capture = [
+  "dxcam==0.0.5; sys_platform == 'win32'",
+  "mss==10.0.0",
+]
+ui = [
+  "PySide6==6.9.1",
+]
 build = [
   "pyinstaller==6.15.0",
 ]
@@ -42,6 +49,7 @@ packages = ["src/game_chat_translator"]
 [tool.pytest.ini_options]
 addopts = "--strict-config --strict-markers -ra"
 testpaths = ["tests"]
+markers = ["windows_ui: optional native Windows/Qt calibration tests"]
 
 [tool.ruff]
 target-version = "py312"
@@ -58,5 +66,9 @@ packages = ["game_chat_translator"]
 mypy_path = "src"
 
 [[tool.mypy.overrides]]
-module = ["win32api", "win32gui", "win32process"]
+module = ["dxcam", "mss", "PySide6.*", "win32api", "win32gui", "win32process"]
 ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["game_chat_translator.ui.region_selector"]
+warn_unused_ignores = false

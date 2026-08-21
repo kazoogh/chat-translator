@@ -38,10 +38,10 @@ jobs:
       - run: uv run ruff check .
       - run: uv run mypy
       - run: uv run gct-validate .
-      - run: uv run pytest
+      - run: uv run pytest -m "not windows_ui"
 
   windows-packaging-smoke:
-    needs: portable
+    needs: [portable, windows-ui]
     runs-on: windows-latest
     env:
       PYTHONUTF8: '1'
@@ -56,3 +56,21 @@ jobs:
       - run: uv sync --frozen --extra build
       - shell: pwsh
         run: .\scripts\packaging_smoke.ps1
+
+  windows-ui:
+    needs: portable
+    runs-on: windows-latest
+    env:
+      PYTHONUTF8: '1'
+      QT_QPA_PLATFORM: offscreen
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: '0.8.11'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: uv sync --frozen --extra dev --extra capture --extra ui
+      - run: uv run mypy
+      - run: uv run pytest -m windows_ui
