@@ -1,7 +1,7 @@
 # game chat translator — project architecture
 
 status: build-ready specification  
-architecture version: 1.0  
+architecture version: 1.1
 target platform: windows 10/11  
 primary use case: detect and translate multilingual in-game chat into natural gamer english, preserving slang, tone, profanity, game terminology, names, and formatting, then display and optionally read it aloud. stalzone is the first fully tuned game profile, not a permanent limitation of the core engine.
 
@@ -928,3 +928,6 @@ also collect a smaller Minecraft Java fixture set. screenshots improve OCR tunin
 | 2026-08-20 | Apache-2.0 project license | permissive reuse plus an explicit patent grant fits a public extensible desktop project |
 | 2026-08-20 | checksummed manual updates before self-update | avoids unsafe silent replacement and does not imply paid code signing is already available |
 | 2026-08-20 | build-ready typed runtime contracts | implementation slices share stable events, lifecycle states, fallbacks, and ownership rules |
+| 2026-08-20 | pause during profile-switch debounce | a new foreground candidate must never be captured with the prior game's calibration |
+| 2026-08-20 | stable Windows display device names | persisted calibration keys use display device identity rather than transient monitor handles |
+| 2026-08-20 | bounded proportional calibration reuse | major aspect-ratio, size, or DPI changes require recalibration instead of silently reusing stale geometry |

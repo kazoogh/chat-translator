@@ -34,11 +34,13 @@ def test_calibration_repository_round_trip(tmp_path: Path) -> None:
         )
         calibration_id = repository.save_calibration("stalzone.default", "monitor-1", region, 1.0)
         assert isinstance(calibration_id, UUID)
-        # Upsert identity may keep the first ID; retrieve the stored row directly for this contract.
-        stored_id = UUID(
-            database.open().execute("SELECT calibration_id FROM calibrations").fetchone()[0]
+        assert repository.get_calibration(calibration_id) == region
+        assert (
+            repository.find_calibration(
+                "stalzone.default", "windowed", "monitor-1", 3440, 1440, 144, 1.0
+            )
+            == region
         )
-        assert repository.get_calibration(stored_id) == region
 
 
 def test_transaction_rolls_back_on_error(tmp_path: Path) -> None:
