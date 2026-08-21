@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sys
+from importlib import util as importlib_util
 from pathlib import Path
 from threading import Barrier, Lock, Thread
 from types import ModuleType
@@ -11,6 +12,7 @@ from game_chat_translator.vision.base import OcrProviderError
 from game_chat_translator.vision.paddle_ocr import (
     PaddleOcrConfig,
     PaddleOcrProvider,
+    load_paddle_ocr_runtime,
     parse_paddle_v3_results,
 )
 
@@ -18,6 +20,28 @@ from game_chat_translator.vision.paddle_ocr import (
 class FakeV3Result:
     def __init__(self, payload: object) -> None:
         self.json = payload
+
+
+def test_paddle_runtime_hides_only_optional_torch_discovery(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    observed: list[object] = []
+
+    class ProbeModule(ModuleType):
+        def __getattr__(self, name: str) -> object:
+            if name == "PaddleOCR":
+                observed.append(importlib_util.find_spec("torch"))
+                return type("FixturePaddleOCR", (), {})
+            raise AttributeError(name)
+
+    original_find_spec = importlib_util.find_spec
+    monkeypatch.setitem(sys.modules, "paddleocr", ProbeModule("paddleocr"))
+
+    runtime = load_paddle_ocr_runtime()
+
+    assert runtime.__name__ == "FixturePaddleOCR"
+    assert observed == [None]
+    assert importlib_util.find_spec is original_find_spec
 
 
 def test_parse_paddle_3_result_contract_and_scripts() -> None:

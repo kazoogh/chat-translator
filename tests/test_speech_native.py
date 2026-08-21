@@ -40,7 +40,8 @@ def test_windows_sapi_synthesizes_plain_text_to_a_local_wave(tmp_path: Path) -> 
             degraded = True
         stream.Close()
         stream = None
-        voice.AudioOutputStream = None
+        if not degraded:
+            voice.AudioOutputStream = None
     finally:
         if stream is not None:
             stream.Close()
