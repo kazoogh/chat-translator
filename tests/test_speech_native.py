@@ -17,7 +17,10 @@ def test_windows_sapi_synthesizes_plain_text_to_a_local_wave(tmp_path: Path) -> 
     voice = None
     try:
         voice = Dispatch("SAPI.SpVoice")
-        assert int(voice.GetVoices().Count) > 0
+        voices = voice.GetVoices()
+        assert int(voices.Count) > 0
+        # Hosted Windows images can expose voice tokens while leaving the default token unset.
+        voice.Voice = voices.Item(0)
         stream = Dispatch("SAPI.SpFileStream")
         stream.Open(str(output), 3, False)
         voice.AudioOutputStream = stream

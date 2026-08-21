@@ -38,7 +38,7 @@ reviewed before every release artifact is published.
 | SentencePiece | 0.2.2 | Apache-2.0 | https://github.com/google/sentencepiece | transitive Argos tokenizer runtime |
 | Stanza | 1.10.1 | Apache-2.0 | https://github.com/stanfordnlp/stanza | transitive Argos sentence-boundary runtime |
 | spaCy | 3.8.15 | MIT | https://github.com/explosion/spaCy | transitive Argos language runtime |
-| PyTorch | 2.13.0 | BSD-3-Clause | https://github.com/pytorch/pytorch | transitive Argos/Stanza runtime |
+| PyTorch | 2.12.1 | BSD-3-Clause | https://github.com/pytorch/pytorch | pinned transitive Argos/Stanza runtime |
 | diskcache | 5.6.3 | Apache-2.0 | https://github.com/grantjenks/python-diskcache | transitive llama-cpp-python runtime |
 
 Downloadable model payloads are not bundled in the wheel or installer. Explicit setup can acquire
