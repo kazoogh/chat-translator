@@ -8,6 +8,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from importlib.resources import files
 from pathlib import Path
+from threading import RLock
 
 from game_chat_translator.settings import default_data_dir
 
@@ -62,19 +63,25 @@ class Database:
         self.path = path or default_data_dir() / "state.sqlite3"
         self.busy_timeout_ms = busy_timeout_ms
         self._connection: sqlite3.Connection | None = None
+        self._lock = RLock()
 
     def open(self) -> sqlite3.Connection:
-        if self._connection is not None:
-            return self._connection
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        connection = sqlite3.connect(self.path, isolation_level=None)
-        connection.row_factory = sqlite3.Row
-        connection.execute("PRAGMA journal_mode=WAL")
-        connection.execute("PRAGMA foreign_keys=ON")
-        connection.execute(f"PRAGMA busy_timeout={int(self.busy_timeout_ms)}")
-        self._connection = connection
-        self.migrate()
-        return connection
+        with self._lock:
+            if self._connection is not None:
+                return self._connection
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+            connection = sqlite3.connect(
+                self.path,
+                isolation_level=None,
+                check_same_thread=False,
+            )
+            connection.row_factory = sqlite3.Row
+            connection.execute("PRAGMA journal_mode=WAL")
+            connection.execute("PRAGMA foreign_keys=ON")
+            connection.execute(f"PRAGMA busy_timeout={int(self.busy_timeout_ms)}")
+            self._connection = connection
+            self.migrate()
+            return connection
 
     def migrate(self) -> None:
         connection = self._require_connection()
@@ -119,20 +126,22 @@ class Database:
 
     @contextmanager
     def transaction(self) -> Iterator[sqlite3.Connection]:
-        connection = self._require_connection()
-        connection.execute("BEGIN IMMEDIATE")
-        try:
-            yield connection
-        except BaseException:
-            connection.execute("ROLLBACK")
-            raise
-        else:
-            connection.execute("COMMIT")
+        with self._lock:
+            connection = self._require_connection()
+            connection.execute("BEGIN IMMEDIATE")
+            try:
+                yield connection
+            except BaseException:
+                connection.execute("ROLLBACK")
+                raise
+            else:
+                connection.execute("COMMIT")
 
     def close(self) -> None:
-        if self._connection is not None:
-            self._connection.close()
-            self._connection = None
+        with self._lock:
+            if self._connection is not None:
+                self._connection.close()
+                self._connection = None
 
     def _require_connection(self) -> sqlite3.Connection:
         if self._connection is None:

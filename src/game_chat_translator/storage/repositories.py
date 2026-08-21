@@ -14,6 +14,8 @@ from game_chat_translator.storage.database import Database
 
 
 class StateRepository(Protocol):
+    def has_calibration(self, profile_id: str) -> bool: ...
+
     def save_calibration(
         self, profile_id: str, monitor_id: str, region: ChatRegion, game_ui_scale: float | None
     ) -> UUID: ...
@@ -37,6 +39,17 @@ class StateRepository(Protocol):
 class SqliteStateRepository:
     def __init__(self, database: Database) -> None:
         self.database = database
+
+    def has_calibration(self, profile_id: str) -> bool:
+        row = (
+            self.database.open()
+            .execute(
+                "SELECT 1 FROM calibrations WHERE profile_id = ? LIMIT 1",
+                (profile_id,),
+            )
+            .fetchone()
+        )
+        return row is not None
 
     def save_calibration(
         self, profile_id: str, monitor_id: str, region: ChatRegion, game_ui_scale: float | None

@@ -111,6 +111,9 @@ class GlossaryLearner:
         self._repository.save(updated)
         return updated
 
+    def list_candidates(self, status: CandidateStatus | None = None) -> tuple[Candidate, ...]:
+        return self._repository.list(status)
+
     def export_overlay(self) -> OverlayExport:
         terms = tuple(
             OverlayTerm(

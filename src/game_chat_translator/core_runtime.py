@@ -18,8 +18,13 @@ from game_chat_translator.model_management import (
 )
 from game_chat_translator.resource_paths import bundled_resource_root
 from game_chat_translator.settings import default_data_dir
-from game_chat_translator.storage import SqliteLearningRepository, SqliteModelStateStore
+from game_chat_translator.storage import (
+    HistoryRepository,
+    SqliteLearningRepository,
+    SqliteModelStateStore,
+)
 from game_chat_translator.storage.database import Database
+from game_chat_translator.storage.repositories import SqliteStateRepository
 from game_chat_translator.translation import (
     ArgosProviderFactory,
     BuiltinCorpusTranslationProvider,
@@ -80,11 +85,18 @@ class CoreRuntime:
         )
         self._pipelines: list[TranslationPipeline] = []
         self._pipeline_models: dict[int, str] = {}
+        self._compute_closed = False
+        self._storage_closed = False
         self._closed = False
+        self._layout_generation = 0
 
     @property
     def manifest_entries(self) -> tuple[ModelEntry, ...]:
         return self._manifest.models
+
+    @property
+    def active_pipeline_count(self) -> int:
+        return len(self._pipelines)
 
     def model_options(self) -> tuple[ModelOption, ...]:
         return tuple(
@@ -175,13 +187,55 @@ class CoreRuntime:
             usernames=usernames,
         )
 
+    def history_repository(self) -> HistoryRepository:
+        return HistoryRepository(self._database)
+
+    def state_repository(self) -> SqliteStateRepository:
+        return SqliteStateRepository(self._database)
+
+    def clear_translation_history(self) -> None:
+        for pipeline in tuple(self._pipelines):
+            pipeline.clear_history()
+
+    def advance_layout_generation(self) -> int:
+        self._layout_generation = (
+            max(
+                (pipeline.generations[1] for pipeline in self._pipelines),
+                default=self._layout_generation,
+            )
+            + 1
+        )
+        for pipeline in tuple(self._pipelines):
+            profile, _layout, context, glossary, model, config = pipeline.generations
+            pipeline.advance_generations(
+                profile=profile,
+                layout=self._layout_generation,
+                context=context,
+                glossary=glossary,
+                model=model,
+                config=config,
+            )
+        return self._layout_generation
+
+    def close_compute(self) -> None:
+        if self._compute_closed:
+            return
+        self._compute_closed = True
+        for pipeline in tuple(reversed(self._pipelines)):
+            self.release_pipeline(pipeline)
+
+    def close_storage(self) -> None:
+        if self._storage_closed:
+            return
+        self._storage_closed = True
+        self._database.close()
+
     def close(self) -> None:
         if self._closed:
             return
         self._closed = True
-        for pipeline in tuple(reversed(self._pipelines)):
-            self.release_pipeline(pipeline)
-        self._database.close()
+        self.close_compute()
+        self.close_storage()
 
     def __enter__(self) -> CoreRuntime:
         return self

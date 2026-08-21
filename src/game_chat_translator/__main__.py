@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import multiprocessing
 import sys
 from dataclasses import asdict
 
@@ -9,6 +10,7 @@ from game_chat_translator import __version__
 
 
 def main(argv: list[str] | None = None) -> int:
+    multiprocessing.freeze_support()
     parser = argparse.ArgumentParser(description="Offline-first game chat translator")
     parser.add_argument("--version", action="version", version=__version__)
     parser.add_argument(
@@ -31,7 +33,10 @@ def main(argv: list[str] | None = None) -> int:
         from game_chat_translator.resource_paths import bundled_resource_root
         from game_chat_translator.validation.validators import validate_repository
 
-        validate_repository(bundled_resource_root())
+        resource_root = bundled_resource_root()
+        validate_repository(resource_root)
+        if not (resource_root / "assets" / "app.ico").is_file():
+            raise RuntimeError("packaged application icon is unavailable")
         return 0
     if args.list_models or args.download_model or args.remove_model:
         from game_chat_translator.core_runtime import CoreRuntime
@@ -62,12 +67,10 @@ def main(argv: list[str] | None = None) -> int:
             del exc
             print("model setup could not be completed safely", file=sys.stderr)
             return 2
-    parser.print_help()
-    return 0
+    from game_chat_translator.desktop import run_desktop_application
+
+    return run_desktop_application()
 
 
 if __name__ == "__main__":
-    import multiprocessing
-
-    multiprocessing.freeze_support()
     raise SystemExit(main())

@@ -31,7 +31,6 @@ capture = [
   "dxcam==0.0.5; sys_platform == 'win32'",
   "mss==10.0.0",
   "numpy==2.2.6",
-  "opencv-python==4.10.0.84",
 ]
 ui = [
   "PySide6==6.9.1",
@@ -41,6 +40,9 @@ language = [
 ]
 translation = [
   "argostranslate==1.11.0",
+  # Stanza otherwise resolves to the newest PyTorch release. Pin the established CPU-capable
+  # runtime; newer 2.12/2.13 wheels fail to load shm.dll on the Windows 2025 hosted runner.
+  "torch==2.7.1",
   "llama-cpp-python @ https://github.com/abetlen/llama-cpp-python/releases/download/v0.3.19/llama_cpp_python-0.3.19-cp312-cp312-win_amd64.whl#sha256=1843b30d90e35296dbd9bd0b2b753b42f0fafa6aec6d2b1c0fff352f801bc89b ; sys_platform == 'win32' and python_version == '3.12'",
 ]
 vision = [
@@ -61,10 +63,18 @@ gct-diagnostics = "game_chat_translator.diagnostics:main"
 [tool.hatch.metadata]
 allow-direct-references = true
 
+[tool.uv]
+# DXcam 0.0.5 declares OpenCV although its capture package does not import it. The vision runtime
+# supplies the compatible contrib build, avoiding two distributions that both own `cv2` on Windows.
+override-dependencies = [
+  "opencv-python==4.10.0.84; sys_platform != 'win32'",
+]
+
 [tool.hatch.build.targets.wheel]
 packages = ["src/game_chat_translator"]
 
 [tool.hatch.build.targets.wheel.force-include]
+"assets" = "game_chat_translator/resources/assets"
 "data" = "game_chat_translator/resources/data"
 "profiles" = "game_chat_translator/resources/profiles"
 "THIRD_PARTY_NOTICES.md" = "game_chat_translator/resources/THIRD_PARTY_NOTICES.md"
@@ -74,6 +84,7 @@ addopts = "--strict-config --strict-markers -ra"
 testpaths = ["tests"]
 markers = [
   "language: requires the pinned local fastText language extra",
+  "speech_native: requires Windows SAPI and the pinned pywin32 extra",
   "translation_native: requires pinned Argos and llama.cpp translation extras",
   "vision: requires the pinned OCR/vision extra",
   "windows_ui: optional native Windows/Qt calibration tests",
@@ -113,3 +124,12 @@ ignore_missing_imports = true
 [[tool.mypy.overrides]]
 module = ["game_chat_translator.ui.region_selector"]
 warn_unused_ignores = false
+
+[[tool.mypy.overrides]]
+module = [
+  "game_chat_translator.desktop",
+  "game_chat_translator.ui.dashboard",
+  "game_chat_translator.ui.tray",
+  "game_chat_translator.ui.translation_window",
+]
+disable_error_code = ["misc"]

@@ -42,3 +42,14 @@ def test_privacy_defaults_are_local_and_ephemeral() -> None:
     assert settings.privacy.telemetry is False
     assert settings.reply.auto_send is False
     assert settings.reply.suppress_key_event is False
+
+
+def test_persistent_history_requires_a_bounded_nonzero_retention() -> None:
+    with pytest.raises(ValueError, match="retention"):
+        AppSettings.model_validate(
+            {"privacy": {"persist_message_history": True, "history_retention_days": 0}}
+        )
+    settings = AppSettings.model_validate(
+        {"privacy": {"persist_message_history": True, "history_retention_days": 30}}
+    )
+    assert settings.privacy.history_retention_days == 30

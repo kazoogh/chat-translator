@@ -117,3 +117,14 @@ def test_router_close_is_safe_and_idempotent_for_distinct_providers() -> None:
     router.close()
     router.close()
     assert first.closes == 1 and second.closes == 1
+
+
+def test_clear_cache_forces_a_fresh_local_translation() -> None:
+    provider = FakeProvider("contextual", ["hello Forge-11"])
+    router = TranslationRouter(provider, None, timeout_seconds=0.25)
+    router.translate(_request())
+    router.translate(_request())
+    assert provider.calls == 1
+    router.clear_cache()
+    router.translate(_request())
+    assert provider.calls == 2

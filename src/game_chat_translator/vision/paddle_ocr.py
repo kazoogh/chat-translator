@@ -5,9 +5,11 @@ import os
 import threading
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
+from importlib import util as importlib_util
 from itertools import islice
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
+from unittest.mock import patch
 
 from game_chat_translator.models import OcrFragment, Point
 from game_chat_translator.vision.base import (
@@ -104,7 +106,7 @@ class PaddleOcrProvider:
                 raise OcrProviderError("PaddleOCR provider is stopped")
             self._health = ProviderHealth.LOADING
             try:
-                from paddleocr import PaddleOCR
+                PaddleOCR = load_paddle_ocr_runtime()
 
                 self._pipeline = PaddleOCR(
                     lang=self.config.language,
@@ -120,6 +122,29 @@ class PaddleOcrProvider:
                 raise OcrProviderError("PaddleOCR could not initialize local models") from exc
             self._health = ProviderHealth.READY
             return self._pipeline
+
+
+def load_paddle_ocr_runtime() -> type[Any]:
+    """Import PaddleOCR without loading ModelScope's unused optional PyTorch runtime.
+
+    PaddleOCR imports ModelScope for optional model downloads. ModelScope imports PyTorch merely
+    because it is installed, even though this app supplies explicit local Paddle models. In the
+    combined Windows installation, importing Paddle and PyTorch native DLLs into the same OCR
+    process can fail. The OCR provider is process-isolated and never uses PyTorch, so hide only
+    that optional discovery check for the duration of the PaddleOCR import.
+    """
+
+    original_find_spec = importlib_util.find_spec
+
+    def find_spec_without_torch(name: str, package: str | None = None) -> Any:
+        if name == "torch" or name.startswith("torch."):
+            return None
+        return original_find_spec(name, package)
+
+    with patch.object(importlib_util, "find_spec", side_effect=find_spec_without_torch):
+        from paddleocr import PaddleOCR
+
+    return cast(type[Any], PaddleOCR)
 
 
 def parse_paddle_v3_results(results: Any, *, minimum_confidence: float) -> tuple[OcrFragment, ...]:
