@@ -1,0 +1,8 @@
+{
+  "schema_version": 1,
+  "patterns": [
+    "(?i)^.+ (joined|left) the game$",
+    "(?i)^.+ was (slain|shot|killed|blown up) by .+$",
+    "(?i)^You have (the advancement|made the advancement)"
+  ]
+}

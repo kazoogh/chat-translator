@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "profile_id": "stalzone.default",
+  "version": 1,
+  "display_name": "STALZONE",
+  "inherits": "generic.default",
+  "detection": {
+    "executables": [],
+    "window_title_patterns": ["(?i)\\bSTALZONE\\b"],
+    "window_class_patterns": [],
+    "minimum_confidence": 0.9,
+    "status": "executable_pending_verification"
+  },
+  "chat": {
+    "default_anchor": "bottom_left",
+    "player_message_separators": [":"],
+    "direction_markers": ["->"],
+    "announce_outbound": false,
+    "announce_system": false,
+    "username_pattern": "^[\\w.-]{1,32}$"
+  },
+  "resources": {
+    "glossary_id": "stalzone.v1",
+    "system_patterns": "system_patterns.json"
+  },
+  "layouts": {
+    "strategy": "user_calibration_with_profile_hints",
+    "default_anchor": "bottom_left",
+    "presets": ["default", "windowed", "ultrawide"]
+  },
+  "preprocess": {
+    "scale": 3,
+    "contrast": 1.35,
+    "sharpen": true,
+    "text_colors": ["#FFFFFF", "#F2D16B", "#74C7EC"]
+  }
+}

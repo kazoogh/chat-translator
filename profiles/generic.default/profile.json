@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "profile_id": "generic.default",
+  "version": 1,
+  "display_name": "Generic Game (Manual)",
+  "inherits": null,
+  "detection": {
+    "executables": [],
+    "window_title_patterns": [],
+    "window_class_patterns": [],
+    "minimum_confidence": 1.0,
+    "status": "manual_only"
+  },
+  "chat": {
+    "default_anchor": "bottom_left",
+    "player_message_separators": [":"],
+    "direction_markers": [],
+    "announce_outbound": false,
+    "announce_system": false,
+    "username_pattern": "^[\\w.-]{1,32}$"
+  },
+  "resources": {
+    "glossary_id": null,
+    "system_patterns": null
+  },
+  "layouts": {
+    "strategy": "manual",
+    "default_anchor": "bottom_left",
+    "presets": ["default", "windowed", "ultrawide"]
+  },
+  "preprocess": {
+    "scale": 2,
+    "contrast": 1.2,
+    "sharpen": true,
+    "text_colors": []
+  }
+}

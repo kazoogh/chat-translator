@@ -1,0 +1,58 @@
+name: portable-tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: test-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  portable:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    env:
+      PYTHONUTF8: '1'
+      PYTHONIOENCODING: utf-8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: '0.8.11'
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: uv sync --frozen --extra dev
+      - run: uv run ruff format --check .
+      - run: uv run ruff check .
+      - run: uv run mypy
+      - run: uv run gct-validate .
+      - run: uv run pytest
+
+  windows-packaging-smoke:
+    needs: portable
+    runs-on: windows-latest
+    env:
+      PYTHONUTF8: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: '0.8.11'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: uv sync --frozen --extra build
+      - shell: pwsh
+        run: .\scripts\packaging_smoke.ps1

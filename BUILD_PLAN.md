@@ -4,6 +4,10 @@ status: ready to execute
 target: Windows 10/11 x64  
 delivery strategy: small vertical pull requests with tests and runnable checkpoints
 
+implementation status: slice 0 completed on 2026-08-20; slices 1–7 remain in progress. The slice-0
+gate passes on the local Windows Python 3.13 environment and is configured for Python 3.12 on
+Windows/Linux CI.
+
 ## execution rules
 
 - keep `main` releasable; build on scoped branches and merge only validated slices.
