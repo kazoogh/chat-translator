@@ -65,8 +65,6 @@ class FastTextLanguageProvider:
                     or self._path.stat().st_size > 1_073_741_824
                 ):
                     raise LanguageProviderError("local language model is missing or invalid")
-                import fasttext
-
                 with tempfile.TemporaryDirectory(prefix="gct-language-model-") as directory:
                     verified_copy = Path(directory) / "model.bin"
                     digest = hashlib.sha256()
@@ -78,6 +76,8 @@ class FastTextLanguageProvider:
                         os.fsync(target.fileno())
                     if digest.hexdigest() != self._manifest_entry.sha256:
                         raise LanguageProviderError("local language model checksum does not match")
+                    import fasttext
+
                     self._model = fasttext.load_model(str(verified_copy))
             except (ImportError, OSError, RuntimeError, ValueError) as exc:
                 if isinstance(exc, LanguageProviderError):
