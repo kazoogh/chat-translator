@@ -38,10 +38,10 @@ jobs:
       - run: uv run ruff check .
       - run: uv run mypy
       - run: uv run gct-validate .
-      - run: uv run pytest -m "not windows_ui"
+      - run: uv run pytest -m "not windows_ui and not vision"
 
   windows-packaging-smoke:
-    needs: [portable, windows-ui]
+    needs: [portable, windows-ui, windows-vision]
     runs-on: windows-latest
     env:
       PYTHONUTF8: '1'
@@ -74,3 +74,24 @@ jobs:
       - run: uv sync --frozen --extra dev --extra capture --extra ui
       - run: uv run mypy
       - run: uv run pytest -m windows_ui
+
+  windows-vision:
+    needs: portable
+    runs-on: windows-latest
+    env:
+      PYTHONUTF8: '1'
+      PYTHONIOENCODING: utf-8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: '0.8.11'
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: uv sync --frozen --extra dev --extra vision
+      - name: Verify pinned OCR wheels import on Windows
+        run: uv run python -c "import cv2, numpy, paddle, paddleocr; print(cv2.__version__, numpy.__version__, paddle.__version__, paddleocr.__version__)"
+      - run: uv run pytest -m vision

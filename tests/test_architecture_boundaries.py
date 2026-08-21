@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import ast
+import importlib
+import pkgutil
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -43,8 +45,14 @@ def test_source_has_no_forbidden_imports_or_calls() -> None:
     assert violations == []
 
 
-def test_base_imports_do_not_require_heavy_providers() -> None:
-    import game_chat_translator.events
-    import game_chat_translator.models
-    import game_chat_translator.settings
-    import game_chat_translator.storage.database  # noqa: F401
+def test_all_application_modules_import_without_heavy_providers() -> None:
+    import game_chat_translator
+
+    imported = []
+    for module in pkgutil.walk_packages(
+        game_chat_translator.__path__, prefix="game_chat_translator."
+    ):
+        importlib.import_module(module.name)
+        imported.append(module.name)
+    assert "game_chat_translator.vision.paddle_ocr" in imported
+    assert "game_chat_translator.ui.region_selector" in imported

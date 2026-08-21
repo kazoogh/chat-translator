@@ -115,6 +115,7 @@ class CalibrationSession:
         self._cancelled = False
         self._saved = False
         self.preview_has_likely_text: bool | None = None
+        self.preview_lines: tuple[str, ...] = ()
 
     @property
     def selection(self) -> PixelRect | None:
@@ -194,6 +195,7 @@ class CalibrationSession:
         self._selection = None
         self._drag_origin = None
         self.preview_has_likely_text = None
+        self.preview_lines = ()
 
     def retry(self, frozen_bgra: bytes) -> None:
         self._ensure_open()
@@ -205,9 +207,12 @@ class CalibrationSession:
         self._frozen_bgra = frozen_bgra
         self.reset()
 
-    def set_preview_result(self, *, has_likely_text: bool | None) -> None:
+    def set_preview_result(
+        self, *, has_likely_text: bool | None, lines: tuple[str, ...] = ()
+    ) -> None:
         self._ensure_open()
         self.preview_has_likely_text = has_likely_text
+        self.preview_lines = tuple(line[:160] for line in lines[:8])
 
     def cancel(self) -> None:
         self._ensure_open()
