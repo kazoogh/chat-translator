@@ -1,12 +1,18 @@
 from __future__ import annotations
 
 import re
+import runpy
+from collections.abc import Callable
 from pathlib import Path
+from typing import cast
 
 import pytest
-from scripts.verify_release_contents import verify
 
 ROOT = Path(__file__).resolve().parents[1]
+verify = cast(
+    Callable[[Path], None],
+    runpy.run_path(ROOT / "scripts" / "verify_release_contents.py")["verify"],
+)
 
 
 def test_pyinstaller_spec_collects_required_local_runtime_boundaries() -> None:
