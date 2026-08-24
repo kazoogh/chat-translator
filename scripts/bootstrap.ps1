@@ -79,12 +79,12 @@ function Invoke-Uv {
     }
 }
 
-Invoke-Uv sync --python 3.12 --frozen --extra dev --extra ui --extra windows --extra capture --extra vision --extra language --extra translation
+Invoke-Uv sync --python 3.12 --frozen --extra dev --extra ui --extra windows --extra capture --extra vision --extra language --extra translation --extra reply
 Invoke-Uv run gct-validate $repoRoot
 Invoke-Uv run ruff format --check .
 Invoke-Uv run ruff check .
 Invoke-Uv run mypy
-Invoke-Uv run pytest -m 'not language and not speech_native and not windows_ui and not vision and not translation_native'
+Invoke-Uv run pytest -m 'not language and not speech_native and not windows_ui and not vision and not translation_native and not reply_native'
 
 if (-not $SkipPreCommit) {
     Invoke-Uv run pre-commit install

@@ -38,7 +38,7 @@ jobs:
       - run: uv run ruff check .
       - run: uv run mypy
       - run: uv run gct-validate .
-      - run: uv run pytest -m "not language and not speech_native and not windows_ui and not vision and not translation_native"
+      - run: uv run pytest -m "not language and not speech_native and not windows_ui and not vision and not translation_native and not reply_native"
 
   windows-packaging-smoke:
     needs: [portable, windows-ui, windows-vision, windows-translation, windows-runtime-integration]
@@ -133,8 +133,10 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - run: uv sync --frozen --extra dev --extra ui --extra windows --extra capture --extra vision --extra language --extra translation
+      - run: uv sync --frozen --extra dev --extra ui --extra windows --extra capture --extra vision --extra language --extra translation --extra reply
       - name: Verify the combined desktop runtime and native namespaces
-        run: uv run python -c "import cv2, fasttext, importlib.metadata as m, numpy, pythoncom, win32com.client; from game_chat_translator.vision.paddle_ocr import load_paddle_ocr_runtime; from PySide6 import QtCore, QtWidgets; load_paddle_ocr_runtime(); owners=[d.metadata['Name'].lower() for d in m.distributions() if d.metadata['Name'].lower().startswith('opencv')]; assert owners == ['opencv-contrib-python'], owners; print(cv2.__version__, numpy.__version__, m.version('paddlepaddle'), m.version('paddleocr'), QtCore.__version__)"
+        run: uv run python -c "import cv2, faster_whisper, fasttext, importlib.metadata as m, numpy, pythoncom, sounddevice, win32com.client; from game_chat_translator.vision.paddle_ocr import load_paddle_ocr_runtime; from PySide6 import QtCore, QtWidgets; load_paddle_ocr_runtime(); owners=[d.metadata['Name'].lower() for d in m.distributions() if d.metadata['Name'].lower().startswith('opencv')]; assert owners == ['opencv-contrib-python'], owners; print(cv2.__version__, numpy.__version__, m.version('paddlepaddle'), m.version('paddleocr'), m.version('faster-whisper'), m.version('sounddevice'), QtCore.__version__)"
       - name: Exercise production monitoring composition and desktop shell
-        run: uv run pytest tests/test_desktop_services.py tests/test_application_pipeline.py tests/test_monitoring.py tests/test_ocr_model_setup.py tests/test_slice5_qt_views.py
+        run: uv run pytest tests/test_desktop_services.py tests/test_application_pipeline.py tests/test_monitoring.py tests/test_ocr_model_setup.py tests/test_slice5_qt_views.py -m "not reply_native"
+      - name: Verify pinned local reply runtimes import on Windows
+        run: uv run pytest -m reply_native

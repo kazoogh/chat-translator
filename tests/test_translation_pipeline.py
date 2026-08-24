@@ -4,6 +4,8 @@ from datetime import UTC, datetime
 from threading import Event, Thread
 from uuid import UUID, uuid4
 
+import pytest
+
 from game_chat_translator.models import MessageClass
 from game_chat_translator.runtime.queues import OfferResult
 from game_chat_translator.translation import (
@@ -192,3 +194,39 @@ def test_generation_advance_cancels_old_work_before_new_job() -> None:
     assert pipeline.offer(_job(generation=2)) is OfferResult.ACCEPTED
     assert pipeline.process_next() is OfferResult.ACCEPTED
     assert pipeline.take() is not None
+
+
+def test_direct_reply_translation_uses_shared_provider_and_current_generations() -> None:
+    provider = _Provider()
+    pipeline = TranslationPipeline(
+        TranslationRouter(provider, None), initial_generations=(1, 1, 1, 1, 1, 1)
+    )
+    outcome = pipeline.translate_direct(
+        _job().request,
+        profile_generation=1,
+        layout_generation=1,
+        config_generation=1,
+    )
+    assert outcome.result.natural_text == "en:привет"
+
+
+def test_direct_reply_translation_rejects_stale_generation_before_provider_call() -> None:
+    provider = _Provider()
+    calls = 0
+
+    def called() -> None:
+        nonlocal calls
+        calls += 1
+
+    provider.on_translate = called
+    pipeline = TranslationPipeline(
+        TranslationRouter(provider, None), initial_generations=(2, 2, 2, 2, 2, 2)
+    )
+    with pytest.raises(TranslationCancelled):
+        pipeline.translate_direct(
+            _job().request,
+            profile_generation=1,
+            layout_generation=1,
+            config_generation=1,
+        )
+    assert calls == 0

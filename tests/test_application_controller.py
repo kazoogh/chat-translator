@@ -215,3 +215,17 @@ def test_all_classes_display_but_only_inbound_messages_enter_speech() -> None:
     assert len(displayed) == len(MessageClass)
     assert len(spoken) == 1
     assert spoken[0].classification is MessageClass.PLAYER_INBOUND
+
+
+def test_reply_lifecycle_is_only_available_while_monitoring() -> None:
+    controller = ApplicationController(AppSettings(), UiEventQueue())
+    controller.start()
+    assert not controller.begin_reply_recording()
+    controller.resume()
+    assert controller.begin_reply_recording()
+    assert controller.state is LifecycleState.RECORDING_REPLY
+    assert not controller.begin_reply_recording()
+    controller.begin_reply_processing()
+    assert controller.state is LifecycleState.PROCESSING_REPLY
+    controller.finish_reply()
+    assert controller.state is LifecycleState.MONITORING

@@ -73,17 +73,25 @@ class ReplySettings(SettingsModel):
     default_target: Literal["last_inbound_speaker"] = "last_inbound_speaker"
     require_target_confirmation_when_ambiguous: bool = True
     auto_send: Literal[False] = False
-    hold_to_talk: str = "v"
+    hold_to_talk: str = Field(default="v", min_length=1, max_length=3)
     minimum_hold_ms: int = Field(default=180, ge=100, le=5000)
     suppress_key_event: Literal[False] = False
     show_clipboard_toast: bool = True
 
+    @model_validator(mode="after")
+    def valid_hold_key(self) -> ReplySettings:
+        _validate_observed_key(self.hold_to_talk)
+        return self
+
 
 class SpeechRecognitionSettings(SettingsModel):
     provider: Literal["faster_whisper"] = "faster_whisper"
-    model: str = "small"
-    language: str = "en"
+    model: Literal["faster-whisper-small.en-local"] = "faster-whisper-small.en-local"
+    language: Literal["en"] = "en"
     local_only: Literal[True] = True
+    minimum_confidence: float = Field(default=0.55, ge=0.0, le=1.0)
+    maximum_recording_seconds: float = Field(default=30.0, ge=1.0, le=30.0)
+    microphone_device: str | int | None = None
 
 
 class SpeechSettings(SettingsModel):
@@ -110,10 +118,19 @@ class PrivacySettings(SettingsModel):
 
 
 class HotkeySettings(SettingsModel):
-    toggle_capture: str = "ctrl+shift+t"
-    toggle_speech: str = "ctrl+shift+m"
-    clear_history: str = "ctrl+shift+l"
-    hold_to_talk: str = "v"
+    toggle_capture: str = Field(default="ctrl+shift+t", max_length=40)
+    toggle_speech: str = Field(default="ctrl+shift+m", max_length=40)
+    clear_history: str = Field(default="ctrl+shift+l", max_length=40)
+    hold_to_talk: str = Field(default="v", min_length=1, max_length=3)
+
+    @model_validator(mode="after")
+    def valid_observation_only_shortcuts(self) -> HotkeySettings:
+        shortcuts = (self.toggle_capture, self.toggle_speech, self.clear_history)
+        normalized = tuple(_validate_shortcut(value) for value in shortcuts)
+        if len(set(normalized)) != len(normalized):
+            raise ValueError("global shortcuts must be unique")
+        _validate_observed_key(self.hold_to_talk)
+        return self
 
 
 class AppSettings(SettingsModel):
@@ -131,13 +148,44 @@ class AppSettings(SettingsModel):
 
     @model_validator(mode="after")
     def hotkey_consistency(self) -> AppSettings:
-        if self.hotkeys.hold_to_talk != self.reply.hold_to_talk:
+        if _validate_observed_key(self.hotkeys.hold_to_talk) != _validate_observed_key(
+            self.reply.hold_to_talk
+        ):
             raise ValueError("reply and hotkey hold-to-talk values must match")
+        hold = _validate_observed_key(self.reply.hold_to_talk)
+        if any(
+            hold in _validate_shortcut(shortcut)
+            for shortcut in (
+                self.hotkeys.toggle_capture,
+                self.hotkeys.toggle_speech,
+                self.hotkeys.clear_history,
+            )
+        ):
+            raise ValueError("hold-to-talk cannot share a key with a global shortcut")
         return self
 
 
 def default_data_dir() -> Path:
     return Path(user_data_path("GameChatTranslator", appauthor=False, roaming=False))
+
+
+def _validate_observed_key(value: str) -> str:
+    key = value.strip().upper()
+    if len(key) == 1 and key.isascii() and key.isalnum():
+        return key
+    if key.startswith("F") and key[1:].isdigit() and 1 <= int(key[1:]) <= 12:
+        return key
+    raise ValueError("hold-to-talk key must be A-Z, 0-9, or F1-F12")
+
+
+def _validate_shortcut(value: str) -> tuple[str, ...]:
+    parts = tuple(part.strip().upper() for part in value.split("+") if part.strip())
+    if not 2 <= len(parts) <= 4 or len(set(parts)) != len(parts):
+        raise ValueError("global shortcut must be a unique modifier chord")
+    if any(part not in {"CTRL", "SHIFT", "ALT"} for part in parts[:-1]):
+        raise ValueError("global shortcut modifiers are invalid")
+    _validate_observed_key(parts[-1])
+    return tuple(sorted(parts))
 
 
 class SettingsStore:

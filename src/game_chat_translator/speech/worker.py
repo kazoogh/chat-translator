@@ -29,6 +29,7 @@ class SpeechWorker:
         self._stop = Event()
         self._finished = Event()
         self._interrupt = Event()
+        self._paused_ack = Event()
         self._muted = False
         self._paused = False
         self._thread: Thread | None = None
@@ -65,8 +66,19 @@ class SpeechWorker:
         with self._lock:
             self._paused = paused
             if paused:
+                self._paused_ack.clear()
                 self._interrupt.set()
+            else:
+                self._paused_ack.clear()
         self._queue.wake()
+
+    def wait_paused(self, timeout: float) -> bool:
+        if timeout < 0:
+            raise ValueError("speech pause timeout cannot be negative")
+        with self._lock:
+            if not self._paused:
+                return False
+        return self._paused_ack.wait(timeout)
 
     def update_settings(self, settings: SpeechSettings) -> None:
         with self._lock:
@@ -122,6 +134,8 @@ class SpeechWorker:
                 if paused or muted:
                     if muted:
                         pending = None
+                    if paused:
+                        self._paused_ack.set()
                     self._stop.wait(0.02)
                     continue
                 if pending is None:
@@ -134,14 +148,25 @@ class SpeechWorker:
                         continue
                     settings = self._settings
                 self._interrupt.clear()
+                cancellation = _Cancellation(self)
                 try:
-                    provider.speak(pending.text, settings, cancellation=_Cancellation(self))
+                    provider.speak(pending.text, settings, cancellation=cancellation)
                 except Exception:
                     self._on_failure("SPEECH_PROVIDER_FAILED")
                     with suppress(Exception):
                         provider.cancel()
                 finally:
-                    pending = None
+                    with self._lock:
+                        preserve_interrupted = (
+                            cancellation.observed
+                            and self._paused
+                            and not self._muted
+                            and not self._stop.is_set()
+                        )
+                    if not preserve_interrupted:
+                        pending = None
+                    else:
+                        self._paused_ack.set()
         except Exception:
             self._on_failure("SPEECH_PROVIDER_UNAVAILABLE")
         finally:
@@ -161,7 +186,15 @@ class SpeechWorker:
 class _Cancellation:
     def __init__(self, worker: SpeechWorker) -> None:
         self._worker = worker
+        self._observed = False
 
     @property
     def cancelled(self) -> bool:
-        return self._worker._stop.is_set() or self._worker._interrupt.is_set()
+        cancelled = self._worker._stop.is_set() or self._worker._interrupt.is_set()
+        if cancelled:
+            self._observed = True
+        return cancelled
+
+    @property
+    def observed(self) -> bool:
+        return self._observed

@@ -88,6 +88,39 @@ def test_muted_rejects_new_speech_while_pause_preserves_fifo_until_resumed() -> 
     assert [text for text, _settings in provider.calls] == ["one", "two"]
 
 
+def test_pause_replays_only_an_active_announcement_that_observed_cancellation() -> None:
+    class BlockingProvider(_Provider):
+        def __init__(self) -> None:
+            super().__init__()
+            self.started = Event()
+            self.interrupted = Event()
+            self.replayed = Event()
+
+        def speak(self, text, settings, *, cancellation):  # type: ignore[no-untyped-def]
+            self.calls.append((text, settings))
+            if len(self.calls) == 1:
+                self.started.set()
+                assert _wait(lambda: cancellation.cancelled)
+                self.interrupted.set()
+                return
+            self.replayed.set()
+
+    provider = BlockingProvider()
+    worker = SpeechWorker(lambda: provider)
+    worker.start()
+    assert worker.offer(SpeechJob(uuid4(), "interrupted")) is SpeechOfferResult.ACCEPTED
+    assert provider.started.wait(2)
+
+    worker.set_paused(True)
+    assert provider.interrupted.wait(2)
+    assert worker.wait_paused(2)
+    worker.set_paused(False)
+
+    assert provider.replayed.wait(2)
+    worker.close()
+    assert [text for text, _settings in provider.calls] == ["interrupted", "interrupted"]
+
+
 def _wait(predicate, attempts: int = 100) -> bool:  # type: ignore[no-untyped-def]
     import time
 

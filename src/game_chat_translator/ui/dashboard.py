@@ -34,6 +34,12 @@ class DashboardController(Protocol):
 
     def set_learned_term_status(self, alias: str, status: str) -> None: ...
 
+    def cancel_reply(self) -> None: ...
+
+    def retry_reply(self, text: str) -> None: ...
+
+    def select_reply_target(self, speaker_id: str) -> None: ...
+
 
 def create_dashboard(
     controller: DashboardController,
@@ -54,6 +60,7 @@ def create_dashboard(
         from PySide6.QtWidgets import (
             QComboBox,
             QLabel,
+            QLineEdit,
             QMainWindow,
             QPushButton,
             QSlider,
@@ -75,6 +82,11 @@ def create_dashboard(
             self._voice_combo: QComboBox | None = None
             self._model_list: QVBoxLayout | None = None
             self._learned_list: QVBoxLayout | None = None
+            self._reply_status: QLabel | None = None
+            self._reply_transcript: QLabel | None = None
+            self._reply_translation: QLabel | None = None
+            self._reply_edit: QLineEdit | None = None
+            self._reply_targets: QComboBox | None = None
             tabs = QTabWidget(self)
             tabs.setObjectName("dashboard-tabs")
             for name in (
@@ -127,6 +139,46 @@ def create_dashboard(
                 layout.addLayout(self._learned_list)
                 self.set_learned_terms(learned_terms)
             if name == "Audio & Voice":
+                self._reply_status = QLabel("Reply: idle")
+                self._reply_status.setObjectName("reply-status")
+                self._reply_transcript = QLabel("")
+                self._reply_transcript.setObjectName("reply-transcript")
+                self._reply_transcript.setWordWrap(True)
+                self._reply_translation = QLabel("")
+                self._reply_translation.setObjectName("reply-translation")
+                self._reply_translation.setWordWrap(True)
+                self._reply_edit = QLineEdit()
+                self._reply_edit.setObjectName("reply-edit")
+                self._reply_edit.setPlaceholderText("Edit translated reply before copying")
+                self._reply_targets = QComboBox()
+                self._reply_targets.setObjectName("reply-target")
+                retry = QPushButton("Copy Edited Reply")
+                retry.setObjectName("reply-retry")
+                retry.clicked.connect(
+                    lambda: controller.retry_reply(
+                        self._reply_edit.text() if self._reply_edit is not None else ""
+                    )
+                )
+                choose = QPushButton("Use Selected Target")
+                choose.setObjectName("reply-choose-target")
+                choose.clicked.connect(
+                    lambda: controller.select_reply_target(
+                        str(self._reply_targets.currentData() or "")
+                        if self._reply_targets is not None
+                        else ""
+                    )
+                )
+                cancel = QPushButton("Cancel Reply")
+                cancel.setObjectName("reply-cancel")
+                cancel.clicked.connect(controller.cancel_reply)
+                layout.addWidget(self._reply_status)
+                layout.addWidget(self._reply_transcript)
+                layout.addWidget(self._reply_translation)
+                layout.addWidget(self._reply_edit)
+                layout.addWidget(self._reply_targets)
+                layout.addWidget(choose)
+                layout.addWidget(retry)
+                layout.addWidget(cancel)
                 rate_label = QLabel("Speech rate")
                 rate = QSlider(Qt.Orientation.Horizontal)
                 rate.setObjectName("speech-rate")
@@ -162,6 +214,30 @@ def create_dashboard(
                     layout.addWidget(QLabel(f"{action}: {shortcut}"))
             layout.addStretch(1)
             return page
+
+        def set_reply_draft(self, draft: object) -> None:
+            status = getattr(draft, "status", "idle")
+            rendered_status = getattr(status, "value", str(status))
+            transcript = str(getattr(draft, "transcript", "") or "")
+            target = str(getattr(draft, "target_speaker", "") or "")
+            translation = str(getattr(draft, "translated_text", "") or "")
+            if self._reply_status is not None:
+                self._reply_status.setText(f"Reply: {rendered_status}")
+            if self._reply_transcript is not None:
+                self._reply_transcript.setText(f"You said: {transcript}" if transcript else "")
+            if self._reply_translation is not None:
+                prefix = f"To {target}: " if target else ""
+                self._reply_translation.setText(prefix + translation if translation else "")
+            if self._reply_edit is not None and translation:
+                self._reply_edit.setText(translation)
+
+        def set_reply_targets(self, targets: tuple[tuple[str, str], ...]) -> None:
+            if self._reply_targets is None:
+                return
+            self._reply_targets.clear()
+            self._reply_targets.addItem("Choose a recent speaker", None)
+            for speaker_id, display_name in targets:
+                self._reply_targets.addItem(display_name, speaker_id)
 
         def set_status(self, status: str) -> None:
             if self._status_label is not None:
