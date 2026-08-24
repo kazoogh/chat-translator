@@ -95,6 +95,7 @@ def test_synthetic_frames_reach_display_and_speech_exactly_once_in_order() -> No
     texts = ("Vasya: привет", "Petya: спасибо", "Olga: пока")
     events = UiEventQueue()
     spoken: list[PresentedMessage] = []
+    observed: list[tuple[str, str, float]] = []
     application = ApplicationController(AppSettings(), events, queue_speech=spoken.append)
     application.start()
     resources = ResourceRegistry(ROOT).load_all()["stalzone.default"]
@@ -116,6 +117,9 @@ def test_synthetic_frames_reach_display_and_speech_exactly_once_in_order() -> No
             initial_generations=(1, 1, 1, 1, 1, 1),
         ),
         InboundPresentationService(application),
+        observe_speaker=lambda speaker, language, confidence: observed.append(
+            (speaker, language, confidence)
+        ),
     )
     preprocess = PreprocessConfig(scale=1, sharpen=False)
     for index in range(3):
@@ -126,5 +130,10 @@ def test_synthetic_frames_reach_display_and_speech_exactly_once_in_order() -> No
     assert [message.source_text for message in displayed] == ["привет", "спасибо", "пока"]
     assert [message.message_id for message in spoken] == [
         message.message_id for message in displayed
+    ]
+    assert [(speaker, language) for speaker, language, _confidence in observed] == [
+        ("Vasya", "ru"),
+        ("Petya", "ru"),
+        ("Olga", "ru"),
     ]
     coordinator.close()

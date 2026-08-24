@@ -53,3 +53,41 @@ def test_persistent_history_requires_a_bounded_nonzero_retention() -> None:
         {"privacy": {"persist_message_history": True, "history_retention_days": 30}}
     )
     assert settings.privacy.history_retention_days == 30
+
+
+@pytest.mark.parametrize(
+    "speech_recognition",
+    [
+        {"model": "small"},
+        {"model": "remote/repository"},
+        {"language": "auto"},
+        {"local_only": False},
+    ],
+)
+def test_speech_recognition_cannot_request_remote_or_unallowlisted_models(
+    speech_recognition: dict[str, object],
+) -> None:
+    with pytest.raises(ValueError):
+        AppSettings.model_validate({"speech_recognition": speech_recognition})
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"reply": {"hold_to_talk": "ctrl+v"}, "hotkeys": {"hold_to_talk": "ctrl+v"}},
+        {"hotkeys": {"toggle_capture": "v"}},
+        {"hotkeys": {"toggle_capture": "win+t"}},
+        {
+            "hotkeys": {
+                "toggle_capture": "ctrl+shift+t",
+                "toggle_speech": "shift+ctrl+t",
+            }
+        },
+        {"hotkeys": {"toggle_capture": "ctrl+shift+v"}},
+    ],
+)
+def test_hotkey_settings_reject_broad_invalid_or_duplicate_observers(
+    payload: dict[str, object],
+) -> None:
+    with pytest.raises(ValueError):
+        AppSettings.model_validate(payload)

@@ -4,7 +4,7 @@ an offline-first Windows tray application that watches a user-calibrated in-game
 
 ## status
 
-build slices 0–5 are implemented: typed foundations, recoverable persistence, documented Win32
+build slices 0–6 are implemented: typed foundations, recoverable persistence, documented Win32
 foreground metadata, calibrated-region capture with fallback, profile debounce, layout
 compatibility checks, the frozen-screenshot calibration interface, PaddleOCR 3.x adapter,
 profile-driven preprocessing, rolling line tracking, conservative profile-driven classification,
@@ -16,8 +16,10 @@ generational FIFO publication, and evidence-gated local glossary learning. The c
 tray/dashboard, calibrated live monitoring coordinator, explicit checksum-verified PaddleOCR setup,
 and ordered Windows SAPI inbound speech are now available with memory-only history by default,
 explicit local model/learning actions, privacy-redacted diagnostics, and deterministic shutdown.
-Hold-to-talk voice replies and release packaging are built in the subsequent slices in
-[`BUILD_PLAN.md`](BUILD_PLAN.md).
+Slice 6 adds observation-only configured-key handling, bounded memory-only microphone capture,
+process-isolated local faster-whisper transcription, exact recent-speaker targeting, editable reply
+drafts, and UI-thread clipboard delivery without focus, paste, Enter, or send automation. Release
+packaging is built in Slice 7 of [`BUILD_PLAN.md`](BUILD_PLAN.md).
 
 Slice 2's real-game recall gate remains provisional until privacy-reviewed STALZONE screenshots are
 available; synthetic contract tests are not counted as recall evidence. See
@@ -36,6 +38,10 @@ Slice 5's calibrated capture-to-presentation coordinator, controller, privacy, F
 fake-COM, offscreen Qt, and native SAPI file-synthesis gates are automated. Real-game OCR recall,
 tray, speaker, game-focus, DPI, and multi-monitor checks remain physical;
 see [`docs/slice5_manual_test_checklist.md`](docs/slice5_manual_test_checklist.md).
+
+Slice 6's deterministic key, audio, isolation, targeting, translation, generation, and clipboard
+gates are automated. Real microphone/accent/noise performance and the under-three-second target
+remain physical and provisional; see [`docs/slice6_manual_test_checklist.md`](docs/slice6_manual_test_checklist.md).
 
 ## product boundaries
 

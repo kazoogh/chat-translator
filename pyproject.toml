@@ -51,6 +51,10 @@ vision = [
   "paddleocr==3.2.0",
   "paddlepaddle==3.1.1",
 ]
+reply = [
+  "faster-whisper==1.2.1",
+  "sounddevice==0.5.5",
+]
 build = [
   "pyinstaller==6.15.0",
 ]
@@ -86,6 +90,7 @@ markers = [
   "language: requires the pinned local fastText language extra",
   "speech_native: requires Windows SAPI and the pinned pywin32 extra",
   "translation_native: requires pinned Argos and llama.cpp translation extras",
+  "reply_native: requires pinned sounddevice and faster-whisper reply extras",
   "vision: requires the pinned OCR/vision extra",
   "windows_ui: optional native Windows/Qt calibration tests",
 ]
@@ -114,6 +119,8 @@ module = [
   "fasttext",
   "argostranslate.*",
   "llama_cpp",
+  "sounddevice",
+  "faster_whisper",
   "PySide6.*",
   "win32api",
   "win32gui",

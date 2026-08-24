@@ -9,6 +9,7 @@ from datetime import UTC
 from pathlib import Path
 from threading import Condition, Event, Lock, Thread, current_thread
 from typing import Any
+from uuid import UUID
 
 from game_chat_translator.application import (
     ApplicationController,
@@ -21,8 +22,25 @@ from game_chat_translator.events import AppError, ErrorSeverity
 from game_chat_translator.history import HistoryEntry, WindowGeometry
 from game_chat_translator.learning import CandidateStatus, GlossaryLearner
 from game_chat_translator.lifecycle import LifecycleState
-from game_chat_translator.models import ChatRegion, MessageClass, WindowIdentity
+from game_chat_translator.models import (
+    ChatRegion,
+    MessageClass,
+    ReplyDraft,
+    ReplyStatus,
+    WindowIdentity,
+)
 from game_chat_translator.monitoring import LiveFrameSource, MonitoringWorker
+from game_chat_translator.reply.audio import SoundDeviceAudioRecorder
+from game_chat_translator.reply.clipboard import ClipboardDispatchBridge
+from game_chat_translator.reply.coordinator import ReplyCoordinator, ReplyGenerations
+from game_chat_translator.reply.faster_whisper_stt import IsolatedFasterWhisper
+from game_chat_translator.reply.hotkeys import WindowsHoldKeyObserver, WindowsShortcutObserver
+from game_chat_translator.reply.model_setup import (
+    STT_MODEL_ID,
+    SttModelSetup,
+    SttSetupStatus,
+)
+from game_chat_translator.reply.targeting import SpeakerTracker
 from game_chat_translator.resource_paths import bundled_resource_root
 from game_chat_translator.settings import (
     AppSettings,
@@ -81,6 +99,9 @@ def run_desktop_application(argv: list[str] | None = None) -> int:
         "runtime": None,
         "history": None,
         "monitoring": None,
+        "reply": None,
+        "hold_key": None,
+        "shortcuts": None,
     }
     storage_worker = _StorageWorker(
         on_failure=lambda code: _report_safe_error(holder, code, "storage")
@@ -122,6 +143,8 @@ def run_desktop_application(argv: list[str] | None = None) -> int:
         stop_capture=lambda: _pause_monitoring(runtime_holder),
         close_compute=lambda: _close_compute(background_tasks, runtime_holder),
         close_speech=speech_worker.close,
+        close_audio=lambda: _close_reply(runtime_holder),
+        close_hotkeys=lambda: _close_hotkeys(runtime_holder),
         close_ui=lambda: ui_controller_holder["ui"].close_ui(),
         close_storage=lambda: _close_storage(storage_worker, runtime_holder),
     )
@@ -134,6 +157,11 @@ def run_desktop_application(argv: list[str] | None = None) -> int:
         set_speech_muted=speech_worker.set_muted,
     )
     holder["controller"] = controller
+    if settings.reply.hold_to_talk.casefold() == "v":
+        ui_events.publish_status(
+            "hotkeys",
+            "Hold-to-talk V may overlap a game control; the key is observed and never suppressed",
+        )
     speech_worker.start()
 
     tray_available = bool(QSystemTrayIcon.isSystemTrayAvailable())
@@ -178,6 +206,17 @@ def run_desktop_application(argv: list[str] | None = None) -> int:
     timer.setInterval(30)
     timer.timeout.connect(ui_controller.pump_events)
     ui_controller.bind(dashboard, translation_window, tray, timer)
+    shortcuts = WindowsShortcutObserver(
+        {
+            "toggle_pause": settings.hotkeys.toggle_capture,
+            "toggle_mute": settings.hotkeys.toggle_speech,
+            "clear_history": settings.hotkeys.clear_history,
+        },
+        ui_controller.queue_hotkey_action,
+        on_failure=lambda code: _report_safe_error(holder, code, "hotkeys"),
+    )
+    runtime_holder["shortcuts"] = shortcuts
+    shortcuts.start()
     background_tasks.submit(
         "speech-discovery",
         lambda cancelled: ui_controller.queue_voice_update(
@@ -192,6 +231,7 @@ def run_desktop_application(argv: list[str] | None = None) -> int:
             runtime_holder,
             ui_controller,
             controller,
+            speech_worker,
             degraded,
         ),
     )
@@ -284,6 +324,10 @@ class DesktopUiController:
         self._pending_monitoring_update: tuple[MonitoringWorker | None, str] | None = None
         self._monitoring: MonitoringWorker | None = None
         self._ocr_setup: OcrModelSetup | None = None
+        self._pending_reply_draft: ReplyDraft | None = None
+        self._pending_reply_copied = False
+        self._clipboard = ClipboardDispatchBridge()
+        self._pending_hotkey_actions: deque[str] = deque()
 
     def bind(self, dashboard: Any, translation_window: Any, tray: Any, timer: Any) -> None:
         self._dashboard = dashboard
@@ -293,7 +337,17 @@ class DesktopUiController:
         self._refresh_tray_state()
 
     def toggle_pause(self) -> None:
-        if self._controller.state is LifecycleState.MONITORING:
+        state = self._controller.state
+        if state in {LifecycleState.RECORDING_REPLY, LifecycleState.PROCESSING_REPLY}:
+            self._runtime_holder["pause_after_reply"] = True
+            reply = self._runtime_holder.get("reply")
+            if isinstance(reply, ReplyCoordinator):
+                reply.cancel(clear_draft=True)
+            if self._monitoring is not None:
+                self._monitoring.pause()
+            self._safe_status("reply", "Voice reply cancelled; pausing monitoring")
+            return
+        if state is LifecycleState.MONITORING:
             self._controller.pause()
             if self._monitoring is not None:
                 self._monitoring.pause()
@@ -352,6 +406,9 @@ class DesktopUiController:
 
     def clear_history(self) -> None:
         self._controller.clear_visible_history()
+        reply = self._runtime_holder.get("reply")
+        if isinstance(reply, ReplyCoordinator):
+            reply.clear()
         if self._translation_window is not None:
             self._translation_window.clear_messages()
 
@@ -361,6 +418,47 @@ class DesktopUiController:
 
         if not self._background_tasks.submit("clear-history", clear):
             self._safe_status("history", "History clearing is unavailable")
+
+    def cancel_reply(self) -> None:
+        reply = self._runtime_holder.get("reply")
+        if isinstance(reply, ReplyCoordinator):
+            reply.cancel(clear_draft=True)
+        if self._dashboard is not None:
+            self._dashboard.set_reply_draft(
+                ReplyDraft(
+                    transcript="",
+                    target_speaker=None,
+                    target_language=None,
+                    translated_text=None,
+                    confidence=0,
+                    status=ReplyStatus.CANCELLED,
+                )
+            )
+
+    def retry_reply(self, text: str) -> None:
+        reply = self._runtime_holder.get("reply")
+        if not isinstance(reply, ReplyCoordinator):
+            self._safe_status("reply", "Voice reply is unavailable")
+            return
+        try:
+            result = reply.retry_copy(text)
+        except ValueError:
+            self._safe_status("reply", "Enter a translated reply before copying")
+            return
+        if result.value != "accepted":
+            self._safe_status("reply", "No editable reply is ready")
+
+    def select_reply_target(self, speaker_id: str) -> None:
+        reply = self._runtime_holder.get("reply")
+        if not isinstance(reply, ReplyCoordinator):
+            return
+        try:
+            identity = UUID(speaker_id)
+        except ValueError:
+            self._safe_status("reply", "Choose one exact recent speaker")
+            return
+        if reply.select_target(identity).value != "accepted":
+            self._safe_status("reply", "The selected speaker is no longer available")
 
     def open_model_manager(self) -> None:
         self._safe_status("models", "Choose Download / Verify or Remove on the model page")
@@ -395,6 +493,47 @@ class DesktopUiController:
             self._safe_status("models", "Model management is unavailable")
             return
 
+        if model_id == STT_MODEL_ID:
+            setup = self._runtime_holder.get("stt_setup")
+            if not isinstance(setup, SttModelSetup):
+                self._safe_status("models", "Speech model setup is unavailable")
+                return
+            stt_setup = setup
+
+            def install_stt(cancelled: Event) -> None:
+                outcome = stt_setup.install(
+                    cancelled=cancelled.is_set,
+                    progress=lambda received, total: self._safe_status(
+                        "models", f"Speech model download {received * 100 // total}%"
+                    ),
+                )
+                self._safe_status("models", outcome.message)
+                if outcome.status not in {SttSetupStatus.INSTALLED, SttSetupStatus.READY}:
+                    return
+                monitoring = self._monitoring
+                speakers = self._runtime_holder.get("speakers")
+                path = stt_setup.ready_path()
+                if monitoring is None or not isinstance(speakers, SpeakerTracker) or path is None:
+                    self._safe_status(
+                        "models", "Start verified OCR monitoring before voice replies"
+                    )
+                    return
+                _activate_reply_services(
+                    self._runtime_holder,
+                    monitoring,
+                    speakers,
+                    path,
+                    self._controller,
+                    self._speech_worker,
+                    self,
+                    self._settings,
+                )
+                self._safe_status("reply", "Hold-to-talk is ready")
+
+            if not self._background_tasks.submit("stt-model-setup", install_stt):
+                self._safe_status("models", "Speech model setup is already running")
+            return
+
         if model_id == OCR_MODEL_ID:
             setup = self._ocr_setup
             if setup is None:
@@ -416,10 +555,29 @@ class DesktopUiController:
                 self._safe_status("models", outcome.message)
                 if outcome.status not in {OcrSetupStatus.INSTALLED, OcrSetupStatus.READY}:
                     return
-                monitoring = _build_monitoring(runtime, self._controller, self._settings, setup)
+                speakers = self._runtime_holder.get("speakers")
+                if not isinstance(speakers, SpeakerTracker):
+                    speakers = SpeakerTracker()
+                    self._runtime_holder["speakers"] = speakers
+                monitoring = _build_monitoring(
+                    runtime, self._controller, self._settings, setup, speakers
+                )
                 if monitoring is None:
                     self._safe_status("models", "OCR models did not pass runtime validation")
                     return
+                stt_setup = self._runtime_holder.get("stt_setup")
+                stt_path = stt_setup.ready_path() if isinstance(stt_setup, SttModelSetup) else None
+                if stt_path is not None:
+                    _activate_reply_services(
+                        self._runtime_holder,
+                        monitoring,
+                        speakers,
+                        stt_path,
+                        self._controller,
+                        self._speech_worker,
+                        self,
+                        self._settings,
+                    )
                 self.queue_monitoring_update(monitoring, "OCR models are ready")
 
             if not self._background_tasks.submit("ocr-model-setup", install_ocr):
@@ -444,6 +602,23 @@ class DesktopUiController:
             self._safe_status("models", "Model management is unavailable")
             return
 
+        if model_id == STT_MODEL_ID:
+            setup = self._runtime_holder.get("stt_setup")
+            if not isinstance(setup, SttModelSetup):
+                self._safe_status("models", "Speech model setup is unavailable")
+                return
+            stt_setup = setup
+
+            def remove_stt(_cancelled: Event) -> None:
+                _close_hold_key(self._runtime_holder)
+                _close_reply(self._runtime_holder)
+                outcome = stt_setup.remove(in_use=False)
+                self._safe_status("models", outcome.message)
+
+            if not self._background_tasks.submit("stt-model-remove", remove_stt):
+                self._safe_status("models", "Speech model removal is already running")
+            return
+
         if model_id == OCR_MODEL_ID:
             setup = self._ocr_setup
             if setup is None:
@@ -451,6 +626,8 @@ class DesktopUiController:
                 return
 
             def remove_ocr(_cancelled: Event) -> None:
+                _close_hold_key(self._runtime_holder)
+                _close_reply(self._runtime_holder)
                 with self._calibration_lock:
                     monitoring = self._monitoring
                 if monitoring is not None:
@@ -538,6 +715,33 @@ class DesktopUiController:
             self._pending_runtime_failed = False
             monitoring_update = self._pending_monitoring_update
             self._pending_monitoring_update = None
+            reply_draft = self._pending_reply_draft
+            self._pending_reply_draft = None
+            reply_copied = self._pending_reply_copied
+            self._pending_reply_copied = False
+            hotkey_actions = tuple(self._pending_hotkey_actions)
+            self._pending_hotkey_actions.clear()
+        for action in hotkey_actions:
+            if action == "toggle_pause":
+                self.toggle_pause()
+            elif action == "toggle_mute":
+                self.toggle_mute()
+            elif action == "clear_history":
+                self.clear_history()
+        self._clipboard.process(self._copy_clipboard_on_ui_thread)
+        if reply_draft is not None and self._dashboard is not None:
+            self._dashboard.set_reply_draft(reply_draft)
+            if reply_draft.status.value == "needs_target":
+                speakers = self._runtime_holder.get("speakers")
+                if isinstance(speakers, SpeakerTracker):
+                    self._dashboard.set_reply_targets(
+                        tuple(
+                            (str(target.speaker_id), target.display_name)
+                            for target in speakers.candidates()
+                        )
+                    )
+        if reply_copied and self._tray is not None:
+            self._tray.showMessage("Reply copied", "The translated reply is on your clipboard.")
         if voices is not None and self._dashboard is not None:
             self._dashboard.set_voices(voices, self._settings.speech.voice_id)
         if runtime_update is not None:
@@ -657,6 +861,33 @@ class DesktopUiController:
             if not self._ui_closed:
                 self._pending_runtime_failed = True
 
+    def queue_reply_draft(self, draft: ReplyDraft) -> None:
+        with self._calibration_lock:
+            if not self._ui_closed:
+                self._pending_reply_draft = draft
+
+    def queue_hotkey_action(self, action: str) -> None:
+        if action not in {"toggle_pause", "toggle_mute", "clear_history"}:
+            return
+        with self._calibration_lock:
+            if not self._ui_closed:
+                self._pending_hotkey_actions.append(action)
+
+    def queue_reply_copied(self) -> None:
+        with self._calibration_lock:
+            if not self._ui_closed:
+                self._pending_reply_copied = True
+
+    def copy_reply_to_clipboard(self, text: str, timeout: float = 5.0) -> bool:
+        return self._clipboard.request_copy(text, timeout=timeout)
+
+    def _copy_clipboard_on_ui_thread(self, text: str) -> bool:
+        if self._ui_closed:
+            return False
+        clipboard = self._application.clipboard()
+        clipboard.setText(text)
+        return bool(clipboard.text() == text)
+
     def close_ui(self) -> None:
         if current_thread() is not self._ui_thread:
             self._ui_close_bridge.requested.emit()
@@ -670,6 +901,10 @@ class DesktopUiController:
             self._ui_close_completed.set()
             return
         self._ui_closed = True
+        with self._calibration_lock:
+            self._pending_reply_draft = None
+            self._pending_hotkey_actions.clear()
+        self._clipboard.close()
         if self._timer is not None:
             self._timer.stop()
         if self._tray is not None:
@@ -982,6 +1217,7 @@ def _discover_runtime(
     runtime_holder: dict[str, Any],
     ui_controller: DesktopUiController,
     controller: ApplicationController,
+    speech_worker: SpeechWorker,
     startup_degraded: bool,
 ) -> None:
     if cancelled.is_set():
@@ -997,11 +1233,16 @@ def _discover_runtime(
         from game_chat_translator.settings import default_data_dir
 
         ocr_setup = OcrModelSetup(default_data_dir() / "models" / "ocr")
+        stt_setup = SttModelSetup(default_data_dir() / "models" / "speech")
         models = (
             (
                 OCR_MODEL_ID,
                 "PaddleOCR v5 detection + Cyrillic recognition — "
                 f"{ocr_setup.size_bytes / 1024**2:.1f} MiB — Apache-2.0",
+            ),
+            (
+                STT_MODEL_ID,
+                f"faster-whisper small.en — {stt_setup.size_bytes / 1024**2:.1f} MiB — MIT",
             ),
             *(
                 (
@@ -1019,13 +1260,28 @@ def _discover_runtime(
             )
             for candidate in learner.list_candidates()
         )
-        monitoring = _build_monitoring(runtime, controller, settings, ocr_setup)
+        speakers = SpeakerTracker()
+        monitoring = _build_monitoring(runtime, controller, settings, ocr_setup, speakers)
         if cancelled.is_set():
             runtime.close()
             return
         runtime_holder["runtime"] = runtime
         runtime_holder["history"] = history
         runtime_holder["monitoring"] = monitoring
+        runtime_holder["speakers"] = speakers
+        runtime_holder["stt_setup"] = stt_setup
+        stt_path = stt_setup.ready_path()
+        if monitoring is not None and stt_path is not None:
+            _activate_reply_services(
+                runtime_holder,
+                monitoring,
+                speakers,
+                stt_path,
+                controller,
+                speech_worker,
+                ui_controller,
+                settings,
+            )
         ui_controller.queue_runtime_update(
             runtime,
             history,
@@ -1049,6 +1305,7 @@ def _build_monitoring(
     controller: ApplicationController,
     settings: AppSettings,
     ocr_setup: OcrModelSetup,
+    speakers: SpeakerTracker | None = None,
 ) -> MonitoringWorker | None:
     from game_chat_translator.application import InboundPresentationService
     from game_chat_translator.application_pipeline import ApplicationPipelineCoordinator
@@ -1090,6 +1347,13 @@ def _build_monitoring(
         initial_generation=generation,
     )
     translation = runtime.build_translation_pipeline(initial_generations=(generation,) * 6)
+    speaker_observer: Callable[[str, str, float], None] | None = None
+    if speakers is not None:
+
+        def observe_speaker(speaker: str, language: str, confidence: float) -> None:
+            speakers.observe_message(speaker, language, confidence)
+
+        speaker_observer = observe_speaker
     coordinator = ApplicationPipelineCoordinator(
         ocr,
         classification,
@@ -1097,6 +1361,7 @@ def _build_monitoring(
         InboundPresentationService(controller),
         target_language=settings.translation.target,
         close_translation=lambda: runtime.release_pipeline(translation),
+        observe_speaker=speaker_observer,
     )
     capture = RegionCaptureService(
         FallbackCaptureProvider(DxcamCaptureProvider(), MssCaptureProvider())
@@ -1115,6 +1380,101 @@ def _build_monitoring(
         generation=generation,
         on_failure=lambda code: _publish_monitoring_status(controller, code),
     )
+
+
+def _activate_reply_services(
+    runtime_holder: dict[str, Any],
+    monitoring: MonitoringWorker,
+    speakers: SpeakerTracker,
+    model_path: Path,
+    controller: ApplicationController,
+    speech_worker: SpeechWorker,
+    ui_controller: DesktopUiController,
+    settings: AppSettings,
+) -> None:
+    _close_hold_key(runtime_holder)
+    _close_reply(runtime_holder)
+    from game_chat_translator.language.glossary import GlossaryResolver
+    from game_chat_translator.profiles.resources import ResourceRegistry
+
+    resources = ResourceRegistry(bundled_resource_root()).load_all()
+    selected = resources[settings.application.active_profile]
+    glossary = GlossaryResolver(selected.glossary)
+    pipeline = monitoring.translation_pipeline
+
+    def current_generations() -> ReplyGenerations:
+        profile, layout, context, glossary_generation, model, config = pipeline.generations
+        return ReplyGenerations(
+            profile,
+            layout,
+            context,
+            glossary_generation,
+            model,
+            config,
+            speakers.generation,
+        )
+
+    def report(code: str) -> None:
+        controller.report_error(
+            AppError(
+                code=code,
+                subsystem="reply",
+                severity=ErrorSeverity.RECOVERABLE,
+                user_message="The voice reply could not be completed.",
+                retryable=True,
+            )
+        )
+
+    def finish_reply_operation() -> None:
+        controller.finish_reply()
+        if runtime_holder.pop("pause_after_reply", False):
+            controller.pause()
+            monitoring.pause()
+
+    reply = ReplyCoordinator(
+        hold_key=settings.reply.hold_to_talk,
+        minimum_hold_ms=settings.reply.minimum_hold_ms,
+        minimum_transcript_confidence=settings.speech_recognition.minimum_confidence,
+        recorder_factory=lambda: SoundDeviceAudioRecorder(
+            maximum_seconds=settings.speech_recognition.maximum_recording_seconds,
+            device=settings.speech_recognition.microphone_device,
+        ),
+        transcription=IsolatedFasterWhisper(model_path),
+        speakers=speakers,
+        translation=pipeline,
+        generations=current_generations,
+        pause_speech=speech_worker.set_paused,
+        wait_speech_paused=speech_worker.wait_paused,
+        copy_to_clipboard=ui_controller.copy_reply_to_clipboard,
+        publish_draft=ui_controller.queue_reply_draft,
+        begin_recording=controller.begin_reply_recording,
+        begin_processing=controller.begin_reply_processing,
+        finish_operation=finish_reply_operation,
+        publish_error=report,
+        notify_copied=(
+            ui_controller.queue_reply_copied
+            if settings.reply.show_clipboard_toast
+            else lambda: None
+        ),
+        protected_terms=glossary.protected_terms,
+        copy_after_translation=settings.reply.copy_after_translation,
+    )
+
+    def key_down(key: str, now: float) -> None:
+        reply.key_down(key, now)
+
+    def key_up(key: str, now: float) -> None:
+        reply.key_up(key, now)
+
+    observer = WindowsHoldKeyObserver(
+        settings.reply.hold_to_talk,
+        key_down,
+        key_up,
+        on_failure=report,
+    )
+    runtime_holder["reply"] = reply
+    runtime_holder["hold_key"] = observer
+    observer.start()
 
 
 def _publish_monitoring_status(controller: ApplicationController, error_code: str | None) -> None:
@@ -1191,6 +1551,25 @@ def _close_compute(
     runtime = runtime_holder.get("runtime")
     if isinstance(runtime, CoreRuntime):
         runtime.close_compute()
+
+
+def _close_reply(runtime_holder: dict[str, Any]) -> None:
+    reply, runtime_holder["reply"] = runtime_holder.get("reply"), None
+    if isinstance(reply, ReplyCoordinator):
+        reply.close()
+
+
+def _close_hotkeys(runtime_holder: dict[str, Any]) -> None:
+    _close_hold_key(runtime_holder)
+    observer, runtime_holder["shortcuts"] = runtime_holder.get("shortcuts"), None
+    if isinstance(observer, WindowsShortcutObserver):
+        observer.close()
+
+
+def _close_hold_key(runtime_holder: dict[str, Any]) -> None:
+    observer, runtime_holder["hold_key"] = runtime_holder.get("hold_key"), None
+    if isinstance(observer, WindowsHoldKeyObserver):
+        observer.close()
 
 
 def _pause_monitoring(runtime_holder: dict[str, Any]) -> None:

@@ -28,6 +28,7 @@ class ApplicationPipelineCoordinator:
         target_language: str = "en",
         request_builder: TranslationRequestBuilder | None = None,
         close_translation: Callable[[], None] | None = None,
+        observe_speaker: Callable[[str, str, float], None] | None = None,
     ) -> None:
         self._ocr = ocr
         self._classification = classification
@@ -36,12 +37,17 @@ class ApplicationPipelineCoordinator:
         self._target_language = target_language
         self._request_builder = request_builder or TranslationRequestBuilder()
         self._close_translation = close_translation or translation.close
+        self._observe_speaker = observe_speaker or (lambda _speaker, _language, _confidence: None)
         self._pending_lines: TrackedLines | None = None
         self._pending_message: AnalyzedMessage | None = None
         self._accepted: dict[UUID, AnalyzedMessage] = {}
         self._context: deque[ContextMessage] = deque(maxlen=10)
         self._pending_presentation: tuple[PresentedMessage, ContextMessage] | None = None
         self._closed = False
+
+    @property
+    def translation_pipeline(self) -> TranslationPipeline:
+        return self._translation
 
     def submit_frame(
         self, frame: CapturedFrame, preprocess: PreprocessConfig, *, generation: int
@@ -189,4 +195,10 @@ class ApplicationPipelineCoordinator:
         self._pending_message = None
         if offered is OfferResult.ACCEPTED:
             self._accepted[message.message_id] = analyzed
+            if message.speaker is not None and analyzed.language.confidence >= 0.55:
+                self._observe_speaker(
+                    message.speaker,
+                    analyzed.language.primary_language,
+                    analyzed.language.confidence,
+                )
         return True

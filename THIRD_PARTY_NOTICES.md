@@ -40,6 +40,11 @@ reviewed before every release artifact is published.
 | spaCy | 3.8.15 | MIT | https://github.com/explosion/spaCy | transitive Argos language runtime |
 | PyTorch | 2.7.1 | BSD-3-Clause | https://github.com/pytorch/pytorch | pinned transitive Argos/Stanza runtime |
 | diskcache | 5.6.3 | Apache-2.0 | https://github.com/grantjenks/python-diskcache | transitive llama-cpp-python runtime |
+| faster-whisper | 1.2.1 | MIT | https://github.com/SYSTRAN/faster-whisper | local English speech-to-text runtime; weights are downloaded separately |
+| sounddevice | 0.5.5 | MIT | https://github.com/spatialaudio/python-sounddevice | local microphone capture runtime |
+| PortAudio | bundled by sounddevice 0.5.5 on Windows | MIT | https://github.com/PortAudio/portaudio | native microphone I/O DLL |
+| PyAV | 18.1.0 | BSD-3-Clause | https://github.com/PyAV-Org/PyAV | transitive faster-whisper audio runtime |
+| tokenizers | 0.23.1 | Apache-2.0 | https://github.com/huggingface/tokenizers | transitive faster-whisper tokenizer runtime |
 
 Downloadable model payloads are not bundled in the wheel or installer. Explicit setup can acquire
 only the following Apache-2.0 Qwen GGUF files; the application verifies the listed byte size and
@@ -57,6 +62,13 @@ revision `0d63e78e2b680928f6b1747d76a08db6e645efb7` and
 The application pins each `config.json`, `inference.json`, `inference.pdiparams`, and `inference.yml`
 URL at those revisions and verifies the per-file byte size and SHA-256 recorded in
 `vision/model_setup.py` before atomic activation. No OCR model is bundled in the wheel or installer.
+
+Explicit speech-recognition setup can acquire the MIT-licensed
+`Systran/faster-whisper-small.en` bundle at immutable revision
+`d1d751a5f8271d482d14ca55d9e2deeebbae577f`. The application verifies the fixed
+`config.json`, `model.bin`, `tokenizer.json`, and `vocabulary.txt` sizes and SHA-256 values recorded
+in `reply/model_setup.py` before atomic activation. The converted model derives from OpenAI Whisper;
+no speech model weights are bundled in the wheel or installer.
 
 The lockfile contains additional transitive development and optional-provider packages; the exact
 artifact inventory and complete upstream notice texts remain a release gate. No model payload or

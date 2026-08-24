@@ -12,6 +12,7 @@ from game_chat_translator.capture.service import RegionCaptureService
 from game_chat_translator.detection.game_detector import ProfileResolver
 from game_chat_translator.models import CapturedFrame, ChatRegion, WindowIdentity
 from game_chat_translator.profiles.schema import GameProfile
+from game_chat_translator.translation.pipeline import TranslationPipeline
 from game_chat_translator.vision.preprocess import PreprocessConfig
 
 
@@ -147,6 +148,10 @@ class MonitoringWorker:
         self._pending_layout: tuple[int, Event, list[bool]] | None = None
         self._thread = Thread(target=self._run, name="gct-monitoring", daemon=True)
         self._started = False
+
+    @property
+    def translation_pipeline(self) -> TranslationPipeline:
+        return self._coordinator.translation_pipeline
 
     def start(self) -> None:
         with self._lock:

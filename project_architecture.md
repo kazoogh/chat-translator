@@ -85,7 +85,7 @@ build a small external desktop companion that:
 | voice recognition | faster-whisper | free local multilingual speech-to-text with CPU/GPU options |
 | text-to-speech | Windows SAPI through `pywin32` | built into Windows, offline, and avoids another speech service |
 | UI | PySide6 | better window, tray, hotkey, and packaging support than tkinter |
-| global hotkeys | `pynput` | configurable controls outside the focused window |
+| global key observation | Win32 `GetAsyncKeyState` through ctypes | observes only configured keys without importing any input-synthesis surface |
 | game detection | Win32 foreground-window APIs through `pywin32` | identifies focused executable/window metadata without reading game memory |
 | reply delivery | Qt clipboard | does not simulate game input and lets the user verify the recipient/message |
 | settings | versioned JSON via Pydantic models | human-readable typed configuration |
@@ -617,7 +617,7 @@ chat-translator/
   },
   "speech_recognition": {
     "provider": "faster_whisper",
-    "model": "small",
+    "model": "faster-whisper-small.en-local",
     "language": "en",
     "local_only": true
   },
@@ -932,5 +932,6 @@ also collect a smaller Minecraft Java fixture set. screenshots improve OCR tunin
 | 2026-08-21 | finite opt-in history retention | persisted chat history requires an explicit 1–365 day expiry; zero continues to mean persistence is disabled |
 | 2026-08-21 | worker-owned SAPI and serialized storage | COM speech, history writes, geometry writes, model actions, and diagnostics never execute on the Qt UI thread |
 | 2026-08-21 | global hotkeys remain Slice 6 | Slice 5 displays configured shortcuts; key observation begins with the hold-to-talk implementation so no partial hook lifecycle ships |
+| 2026-08-23 | use observation-only Win32 configured-key polling instead of `pynput` | the application needs down/up state for a tiny allowlist, while avoiding a dependency that also exposes keyboard/mouse synthesis APIs |
 | 2026-08-20 | stable Windows display device names | persisted calibration keys use display device identity rather than transient monitor handles |
 | 2026-08-20 | bounded proportional calibration reuse | major aspect-ratio, size, or DPI changes require recalibration instead of silently reusing stale geometry |

@@ -55,6 +55,15 @@ class Controller:
     def set_learned_term_status(self, alias: str, status: str) -> None:
         self.calls.append(f"term:{alias}:{status}")
 
+    def cancel_reply(self) -> None:
+        self.calls.append("reply:cancel")
+
+    def retry_reply(self, text: str) -> None:
+        self.calls.append(f"reply:retry:{text}")
+
+    def select_reply_target(self, speaker_id: str) -> None:
+        self.calls.append(f"reply:target:{speaker_id}")
+
     def dashboard_hidden(self) -> None:
         self.calls.append("hidden")
 

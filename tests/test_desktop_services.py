@@ -7,12 +7,16 @@ import pytest
 from game_chat_translator.application import ApplicationController
 from game_chat_translator.core_runtime import CoreRuntime
 from game_chat_translator.desktop import (
+    _activate_reply_services,
     _build_monitoring,
     _calibration_restore_target,
+    _close_hold_key,
+    _close_reply,
     _persist_calibration_after_generation_handoff,
 )
 from game_chat_translator.lifecycle import LifecycleState
 from game_chat_translator.models import ChatRegion
+from game_chat_translator.reply.targeting import SpeakerTracker
 from game_chat_translator.settings import AppSettings
 from game_chat_translator.translation.base import CancellationToken, TranslationRequest
 from game_chat_translator.ui.event_queue import UiEventQueue
@@ -101,6 +105,92 @@ def test_production_monitoring_composition_is_constructible_with_local_models(
     assert runtime.active_pipeline_count == 1
     rebuilt.close()
     assert runtime.active_pipeline_count == 0
+    runtime.close()
+
+
+class _FakeStt:
+    def __init__(self, model_path: Path) -> None:
+        assert model_path.is_dir()
+
+    def transcribe(self, *_args: object, **_kwargs: object) -> object:
+        raise AssertionError("composition must not transcribe during startup")
+
+    def close(self) -> None:
+        pass
+
+
+class _FakeHoldObserver:
+    def __init__(self, *_args: object, **_kwargs: object) -> None:
+        self.started = False
+        self.closed = False
+
+    def start(self) -> None:
+        self.started = True
+
+    def close(self) -> None:
+        self.closed = True
+
+
+class _FakeSpeech:
+    def set_paused(self, _paused: bool) -> None:
+        pass
+
+    def wait_paused(self, _timeout: float) -> bool:
+        return True
+
+
+class _FakeReplyUi:
+    def copy_reply_to_clipboard(self, _text: str) -> bool:
+        return True
+
+    def queue_reply_draft(self, _draft: object) -> None:
+        pass
+
+    def queue_reply_copied(self) -> None:
+        pass
+
+
+def test_desktop_reply_composition_owns_coordinator_and_hold_observer(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import game_chat_translator.desktop as desktop
+
+    monkeypatch.setattr(desktop, "IsolatedFasterWhisper", _FakeStt)
+    monkeypatch.setattr(desktop, "WindowsHoldKeyObserver", _FakeHoldObserver)
+    runtime = CoreRuntime(
+        state_path=tmp_path / "state.sqlite3",
+        model_root=tmp_path / "models",
+        lightweight_factory=_TranslationProvider,
+    )
+    controller = ApplicationController(AppSettings(), UiEventQueue())
+    speakers = SpeakerTracker()
+    monitoring = _build_monitoring(
+        runtime,
+        controller,
+        AppSettings(),
+        _ReadyOcrSetup(tmp_path / "ocr"),  # type: ignore[arg-type]
+        speakers,
+    )
+    assert monitoring is not None
+    model = tmp_path / "stt"
+    model.mkdir()
+    holder: dict[str, object] = {}
+    _activate_reply_services(
+        holder,
+        monitoring,
+        speakers,
+        model,
+        controller,
+        _FakeSpeech(),  # type: ignore[arg-type]
+        _FakeReplyUi(),  # type: ignore[arg-type]
+        AppSettings(),
+    )
+    assert holder["reply"] is not None
+    assert isinstance(holder["hold_key"], _FakeHoldObserver)
+    assert holder["hold_key"].started  # type: ignore[union-attr]
+    _close_hold_key(holder)
+    _close_reply(holder)
+    monitoring.close()
     runtime.close()
 
 

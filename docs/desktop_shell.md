@@ -5,7 +5,7 @@ Slice 5 adds the tray-first PySide6 shell and the ordered Windows SAPI boundary.
 Run the desktop development build on Windows with Python 3.12:
 
 ```powershell
-python -m uv run --extra ui --extra windows --extra capture --extra vision --extra language --extra translation game-chat-translator
+python -m uv run --extra ui --extra windows --extra capture --extra vision --extra language --extra translation --extra reply game-chat-translator
 ```
 
 The dashboard contains Status, Capture, Profiles, Translation Models, Audio & Voice, Hotkeys,
@@ -31,7 +31,15 @@ allowlist, size, digest, license, cancellation, and activation checks. Opening t
 no network request. The PaddleOCR setup entry downloads only eight files from two fixed upstream
 revisions, verifies every size and SHA-256, and activates both detection and Cyrillic-recognition
 directories as one atomic bundle. Live monitoring remains in setup state until both OCR models and a
-calibrated chat region are available. Global hotkey registration and hold-to-talk audio are implemented in Slice 6;
-Slice 5 displays their configured values but does not observe or suppress keys.
+calibrated chat region are available.
+
+Slice 6 observes only the configured pause, mute, clear-history, and hold-to-talk virtual keys using
+read-only Win32 key state. It never suppresses or synthesizes input. Explicit speech-model setup
+downloads the fixed faster-whisper small.en revision, verifies every file, and health-checks it in a
+network-denied subprocess before activation. Hold-to-talk records fixed 16 kHz mono PCM in bounded
+memory, pauses SAPI first, resolves an exact recent speaker, reuses the single translation model
+owner, and asks Qt to copy only after every confidence and generation check. Ambiguous targets and
+failed clipboard writes remain editable in the dashboard; there is no automatic retry, paste, Enter,
+focus, or send action.
 
 See [`slice5_manual_test_checklist.md`](slice5_manual_test_checklist.md) for physical Windows checks.

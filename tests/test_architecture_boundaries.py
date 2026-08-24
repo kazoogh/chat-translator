@@ -14,6 +14,7 @@ FORBIDDEN_IMPORTS = {
     "scapy",
     "pyautogui",
     "keyboard",
+    "pynput",
     "sentry_sdk",
     "openai",
 }
@@ -24,6 +25,12 @@ FORBIDDEN_CALL_NAMES = {
     "SendInput",
     "keybd_event",
     "mouse_event",
+    "SetForegroundWindow",
+    "AppActivate",
+    "PostMessage",
+    "SendMessage",
+    "SendKeys",
+    "paste",
 }
 
 
@@ -42,6 +49,8 @@ def test_source_has_no_forbidden_imports_or_calls() -> None:
                     violations.append(f"{path}: forbidden import {name}")
             elif isinstance(node, ast.Attribute) and node.attr in FORBIDDEN_CALL_NAMES:
                 violations.append(f"{path}: forbidden call {node.attr}")
+            elif isinstance(node, ast.Name) and node.id in FORBIDDEN_CALL_NAMES:
+                violations.append(f"{path}: forbidden call {node.id}")
     assert violations == []
 
 

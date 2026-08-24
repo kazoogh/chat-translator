@@ -57,6 +57,7 @@ class TranslationPipeline:
         self._results: deque[PublishedTranslation] = deque()
         self._pending: PublishedTranslation | None = None
         self._lock = Lock()
+        self._provider_lock = Lock()
         self._closed = False
         self._generation_cancel = Event()
 
@@ -88,7 +89,11 @@ class TranslationPipeline:
             generation_cancel = self._generation_cancel
         combined = _CombinedCancellation(generation_cancel, cancellation)
         try:
-            outcome = self._router.translate(job.request, combined)
+            with self._provider_lock:
+                try:
+                    outcome = self._router.translate(job.request, combined)
+                finally:
+                    self._close_router_if_stopped()
         except TranslationCancelled:
             return OfferResult.REJECTED_CANCELLED
         published = PublishedTranslation(
@@ -109,6 +114,41 @@ class TranslationPipeline:
                 return OfferResult.REJECTED_FULL
             self._results.append(published)
             return OfferResult.ACCEPTED
+
+    def translate_direct(
+        self,
+        request: TranslationRequest,
+        *,
+        profile_generation: int,
+        layout_generation: int,
+        config_generation: int,
+        cancellation: CancellationToken | None = None,
+    ) -> TranslationOutcome:
+        """Serialize reply translation with inbound work and reject stale publication."""
+        expected = (
+            profile_generation,
+            layout_generation,
+            request.context_generation,
+            request.glossary_generation,
+            request.model_generation,
+            config_generation,
+        )
+        with self._lock:
+            if self._closed or expected != self._generations:
+                raise TranslationCancelled("translation generations changed")
+            generation_cancel = self._generation_cancel
+        combined = _CombinedCancellation(generation_cancel, cancellation)
+        with self._provider_lock:
+            try:
+                if combined.cancelled:
+                    raise TranslationCancelled("translation cancelled")
+                outcome = self._router.translate(request, combined)
+            finally:
+                self._close_router_if_stopped()
+        with self._lock:
+            if self._closed or expected != self._generations:
+                raise TranslationCancelled("translation generations changed")
+        return outcome
 
     def take(self) -> PublishedTranslation | None:
         with self._lock:
@@ -150,7 +190,17 @@ class TranslationPipeline:
             self._requests.clear()
             self._results.clear()
             self._pending = None
-        self._router.close()
+        if self._provider_lock.acquire(blocking=False):
+            try:
+                self._router.close()
+            finally:
+                self._provider_lock.release()
+
+    def _close_router_if_stopped(self) -> None:
+        with self._lock:
+            stopped = self._closed
+        if stopped:
+            self._router.close()
 
     def clear_history(self) -> None:
         """Cancel queued context work and remove every cached translation outcome."""

@@ -163,6 +163,31 @@ class ApplicationController:
             self._lifecycle.transition(state)
         self._safe_status("lifecycle", state.value)
 
+    def begin_reply_recording(self) -> bool:
+        with self._lock:
+            if self._quit_started or self._lifecycle.state is not LifecycleState.MONITORING:
+                return False
+            self._lifecycle.transition(LifecycleState.RECORDING_REPLY)
+        self._safe_status("lifecycle", LifecycleState.RECORDING_REPLY.value)
+        return True
+
+    def begin_reply_processing(self) -> None:
+        with self._lock:
+            if self._quit_started or self._lifecycle.state is not LifecycleState.RECORDING_REPLY:
+                return
+            self._lifecycle.transition(LifecycleState.PROCESSING_REPLY)
+        self._safe_status("lifecycle", LifecycleState.PROCESSING_REPLY.value)
+
+    def finish_reply(self) -> None:
+        with self._lock:
+            if self._quit_started or self._lifecycle.state not in {
+                LifecycleState.RECORDING_REPLY,
+                LifecycleState.PROCESSING_REPLY,
+            }:
+                return
+            self._lifecycle.transition(LifecycleState.MONITORING)
+        self._safe_status("lifecycle", LifecycleState.MONITORING.value)
+
     def close_dashboard(self, *, tray_available: bool = True) -> DashboardCloseAction:
         if self._settings.application.close_to_tray and tray_available:
             return DashboardCloseAction.HIDE
