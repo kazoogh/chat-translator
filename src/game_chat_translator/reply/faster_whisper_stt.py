@@ -221,7 +221,7 @@ def _faster_whisper_worker(
                 "GCT_STT_ISOLATED": "1",
             }
         )
-        from faster_whisper import WhisperModel  # type: ignore[import-not-found]
+        from faster_whisper import WhisperModel
 
         model = WhisperModel(
             str(model_path),
