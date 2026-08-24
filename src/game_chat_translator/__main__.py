@@ -18,6 +18,11 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Validate that the packaged entry point can start without opening the tray UI.",
     )
+    parser.add_argument(
+        "--frozen-runtime-smoke",
+        action="store_true",
+        help="Validate native imports and frozen subprocess startup without opening the UI.",
+    )
     model_actions = parser.add_mutually_exclusive_group()
     model_actions.add_argument(
         "--list-models", action="store_true", help="List trusted local model setup choices."
@@ -38,6 +43,22 @@ def main(argv: list[str] | None = None) -> int:
         if not (resource_root / "assets" / "app.ico").is_file():
             raise RuntimeError("packaged application icon is unavailable")
         return 0
+    if args.frozen_runtime_smoke:
+        from game_chat_translator.release_smoke import run_frozen_runtime_smoke
+
+        try:
+            run_frozen_runtime_smoke()
+        except Exception as exc:  # fixed diagnostic type only; never provider content
+            import os
+            from pathlib import Path
+
+            report = os.environ.get("GCT_SMOKE_REPORT")
+            if report:
+                with Path(report).open("a", encoding="utf-8") as stream:
+                    stream.write(f"failed:{type(exc).__name__}\n")
+            return 2
+        else:
+            return 0
     if args.list_models or args.download_model or args.remove_model:
         from game_chat_translator.core_runtime import CoreRuntime
 

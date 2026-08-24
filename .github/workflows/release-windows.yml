@@ -1,0 +1,111 @@
+name: windows-release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Release version without the v prefix
+        required: true
+        default: 0.1.0
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: windows-latest
+    env:
+      PYTHONUTF8: '1'
+      PYTHONIOENCODING: utf-8
+      QT_QPA_PLATFORM: offscreen
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: astral-sh/setup-uv@d0d8abe699bfb85fec6de9f7adb5ae17292296ff
+        with:
+          version: '0.8.11'
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.12'
+      - run: uv sync --frozen --all-extras
+      - run: uv run ruff format --check .
+      - run: uv run ruff check .
+      - run: uv run mypy
+      - run: uv run gct-validate .
+      - run: uv run pytest
+
+  package:
+    needs: test
+    runs-on: windows-latest
+    env:
+      PYTHONUTF8: '1'
+      PYTHONIOENCODING: utf-8
+      QT_QPA_PLATFORM: offscreen
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: astral-sh/setup-uv@d0d8abe699bfb85fec6de9f7adb5ae17292296ff
+        with:
+          version: '0.8.11'
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: '3.12'
+      - name: Resolve release version
+        shell: pwsh
+        run: |
+          if ('${{ github.ref_type }}' -eq 'tag') {
+            $version = '${{ github.ref_name }}'.TrimStart('v')
+          } else {
+            $version = '${{ inputs.version }}'
+          }
+          if ($version -notmatch '^\d+\.\d+\.\d+$') { throw 'Version must be semantic x.y.z.' }
+          "RELEASE_VERSION=$version" >> $env:GITHUB_ENV
+      - run: uv sync --frozen --all-extras
+      - name: Install the supported installer compiler
+        shell: pwsh
+        run: winget install --id JRSoftware.InnoSetup -e --accept-package-agreements --accept-source-agreements --silent --disable-interactivity
+      - name: Build and verify frozen app and installer
+        shell: pwsh
+        run: .\scripts\build_installer.ps1 -Version $env:RELEASE_VERSION
+      - name: Exercise silent install, launch, and uninstall
+        shell: pwsh
+        run: .\scripts\test_installer.ps1
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: GameChatTranslator-Windows-x64-${{ env.RELEASE_VERSION }}
+          if-no-files-found: error
+          retention-days: 30
+          path: |
+            artifacts/installer/GameChatTranslator-Setup-x64.exe
+            artifacts/installer/GameChatTranslator-Setup-x64.exe.sha256
+            artifacts/Game Chat Translator/GameChatTranslator/licenses/runtime/runtime-artifact-inventory.json
+            artifacts/frozen-file-inventory.json
+            artifacts/frozen-runtime-smoke.log
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: package
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          pattern: GameChatTranslator-Windows-x64-*
+          merge-multiple: true
+          path: release-assets
+      - uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65
+        with:
+          prerelease: true
+          body_path: docs/release_notes_v0.1.0.md
+          fail_on_unmatched_files: true
+          files: |
+            release-assets/GameChatTranslator-Setup-x64.exe
+            release-assets/GameChatTranslator-Setup-x64.exe.sha256
+            release-assets/runtime-artifact-inventory.json
+            release-assets/frozen-file-inventory.json

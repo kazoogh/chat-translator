@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import re
 from collections import deque
 from collections.abc import Callable
@@ -472,17 +471,16 @@ class DesktopUiController:
         filename, _selected_filter = QFileDialog.getSaveFileName(
             self._dashboard,
             "Export privacy-redacted diagnostics",
-            "game-chat-translator-diagnostics.json",
-            "JSON (*.json)",
+            "game-chat-translator-debug-bundle.zip",
+            "ZIP archive (*.zip)",
         )
         if not filename:
             return
 
         def export(_cancelled: Event) -> None:
-            from game_chat_translator.diagnostics import collect_diagnostics
+            from game_chat_translator.diagnostics import export_debug_bundle
 
-            encoded = json.dumps(collect_diagnostics(), indent=2, sort_keys=True) + "\n"
-            Path(filename).write_text(encoded, encoding="utf-8")
+            export_debug_bundle(Path(filename))
             self._safe_status("diagnostics", "Diagnostics exported")
 
         self._background_tasks.submit("diagnostics", export)

@@ -9,6 +9,8 @@ htmlcov/
 build/
 dist/
 *.spec
+!packaging/*.spec
+artifacts/
 *.sqlite3*
 *.log
 *.tmp
