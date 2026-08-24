@@ -4,7 +4,7 @@ an offline-first Windows tray application that watches a user-calibrated in-game
 
 ## status
 
-build slices 0–6 are implemented: typed foundations, recoverable persistence, documented Win32
+build slices 0–7 are implemented: typed foundations, recoverable persistence, documented Win32
 foreground metadata, calibrated-region capture with fallback, profile debounce, layout
 compatibility checks, the frozen-screenshot calibration interface, PaddleOCR 3.x adapter,
 profile-driven preprocessing, rolling line tracking, conservative profile-driven classification,
@@ -18,8 +18,11 @@ and ordered Windows SAPI inbound speech are now available with memory-only histo
 explicit local model/learning actions, privacy-redacted diagnostics, and deterministic shutdown.
 Slice 6 adds observation-only configured-key handling, bounded memory-only microphone capture,
 process-isolated local faster-whisper transcription, exact recent-speaker targeting, editable reply
-drafts, and UI-thread clipboard delivery without focus, paste, Enter, or send automation. Release
-packaging is built in Slice 7 of [`BUILD_PLAN.md`](BUILD_PLAN.md).
+drafts, and UI-thread clipboard delivery without focus, paste, Enter, or send automation. Slice 7
+adds the PyInstaller one-folder application, per-user Inno Setup installer, frozen native/subprocess
+smoke, silent install/uninstall acceptance, exact file/checksum inventories, pinned release workflow,
+privacy-redacted ZIP support bundle, and accelerated bounded-queue soak. The remaining physical and
+quality evidence is tracked honestly in [`docs/release_acceptance.md`](docs/release_acceptance.md).
 
 Slice 2's real-game recall gate remains provisional until privacy-reviewed STALZONE screenshots are
 available; synthetic contract tests are not counted as recall evidence. See
@@ -42,6 +45,10 @@ see [`docs/slice5_manual_test_checklist.md`](docs/slice5_manual_test_checklist.m
 Slice 6's deterministic key, audio, isolation, targeting, translation, generation, and clipboard
 gates are automated. Real microphone/accent/noise performance and the under-three-second target
 remain physical and provisional; see [`docs/slice6_manual_test_checklist.md`](docs/slice6_manual_test_checklist.md).
+
+Slice 7's release mechanics are automated on Windows. The real-game, named-hardware performance,
+multi-hour, and clean-VM physical checklist remains provisional and is never inferred from hosted
+CI or synthetic fixtures; see [`docs/release_acceptance.md`](docs/release_acceptance.md).
 
 ## product boundaries
 
@@ -98,6 +105,18 @@ Collect a privacy-redacted hardware and foreground-window diagnostic with:
 powershell -ExecutionPolicy Bypass -File .\scripts\diagnostics.ps1 -Output diagnostic.json
 ```
 
+Build and verify the supported Windows installer from the locked combined runtime with:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\build_installer.ps1 -Version 0.1.0
+powershell -ExecutionPolicy Bypass -File .\scripts\test_installer.ps1
+```
+
+The installer and adjacent SHA-256 file are written under `artifacts\installer`. Model weights are
+never bundled and are downloaded only through explicit, revision-pinned, checksum-verified setup.
+
 ## license
 
-original project code is planned under Apache-2.0. models and third-party datasets retain their own licenses and are reviewed before redistribution.
+Original project code is Apache-2.0. Models and third-party datasets retain their own licenses.
+Release builds ship generated runtime notices, exact artifact inventories, GNU LGPL/GPL terms, and
+Qt replacement/relinking instructions; downloadable model weights are not redistributed.
