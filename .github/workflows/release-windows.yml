@@ -105,7 +105,7 @@ jobs:
           body_path: docs/release_notes_v0.1.0.md
           fail_on_unmatched_files: true
           files: |
-            release-assets/GameChatTranslator-Setup-x64.exe
-            release-assets/GameChatTranslator-Setup-x64.exe.sha256
-            release-assets/runtime-artifact-inventory.json
+            release-assets/installer/GameChatTranslator-Setup-x64.exe
+            release-assets/installer/GameChatTranslator-Setup-x64.exe.sha256
+            release-assets/Game Chat Translator/GameChatTranslator/licenses/runtime/runtime-artifact-inventory.json
             release-assets/frozen-file-inventory.json

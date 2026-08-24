@@ -88,3 +88,8 @@ def test_release_workflow_is_pinned_and_tests_before_packaging() -> None:
     assert "package:\n    needs: test" in workflow
     assert "release:\n    if:" in workflow and "needs: package" in workflow
     assert "continue-on-error" not in workflow
+    assert "release-assets/installer/GameChatTranslator-Setup-x64.exe" in workflow
+    assert (
+        "release-assets/Game Chat Translator/GameChatTranslator/licenses/runtime/"
+        "runtime-artifact-inventory.json"
+    ) in workflow
