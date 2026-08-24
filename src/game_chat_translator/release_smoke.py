@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import importlib
 import multiprocessing
 import os
 import sys
@@ -28,13 +29,13 @@ def run_frozen_runtime_smoke() -> None:
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     _mark("start")
 
-    import av
+    av = importlib.import_module("av")
 
     if getattr(sys, "frozen", False) and not getattr(av, "__gct_pcm_only__", False):
         raise RuntimeError("the frozen runtime included the unsupported PyAV codec stack")
 
     _mark("av")
-    import ctranslate2  # type: ignore[import-untyped]  # noqa: F401
+    importlib.import_module("ctranslate2")
 
     _mark("ctranslate2")
     import cv2  # noqa: F401
