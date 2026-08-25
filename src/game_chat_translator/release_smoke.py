@@ -6,6 +6,7 @@ import os
 import sys
 from multiprocessing.connection import Connection
 from pathlib import Path
+from tempfile import TemporaryDirectory
 
 
 def _mark(stage: str) -> None:
@@ -59,6 +60,19 @@ def run_frozen_runtime_smoke() -> None:
     application = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
     application.processEvents()
     _mark("qt")
+
+    from game_chat_translator.core_runtime import CoreRuntime
+
+    with TemporaryDirectory(prefix="gct-release-smoke-") as temporary:
+        root = Path(temporary)
+        with CoreRuntime(
+            state_path=root / "state.sqlite3",
+            model_root=root / "models",
+        ) as runtime:
+            runtime.history_repository().purge_expired()
+            runtime.glossary_learner("stalzone.default").list_candidates()
+            runtime.state_repository().has_calibration("stalzone.default")
+    _mark("storage")
 
     context = multiprocessing.get_context("spawn")
     parent, child = context.Pipe(duplex=True)

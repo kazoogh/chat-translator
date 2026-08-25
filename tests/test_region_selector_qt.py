@@ -64,6 +64,8 @@ def test_selector_uses_existing_event_loop_and_preserves_frame_on_retry_failure(
     assert calibration.preview_has_likely_text is True
     assert calibration.preview_lines == ("Игрок: привет",)
     selector = next(widget for widget in application.topLevelWidgets() if widget.isVisible())
+    available = application.primaryScreen().availableGeometry()
+    assert selector.size() == available.size()
     buttons = {button.text(): button for button in selector.findChildren(QPushButton)}
     buttons["Retry Screenshot"].click()
     assert calibration.frozen_bgra == original

@@ -23,6 +23,12 @@ def test_migrations_are_repeatable_and_enable_required_pragmas(tmp_path: Path) -
         assert count == expected
 
 
+def test_all_required_migrations_are_bundled() -> None:
+    migrations = bundled_migrations()
+    assert tuple(migration.version for migration in migrations) == (1, 2, 3)
+    assert all(migration.sql.strip() for migration in migrations)
+
+
 def test_calibration_repository_round_trip(tmp_path: Path) -> None:
     with Database(tmp_path / "state.sqlite3") as database:
         repository = SqliteStateRepository(database)

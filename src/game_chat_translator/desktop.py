@@ -319,6 +319,7 @@ class DesktopUiController:
         self._calibration_ready: tuple[WindowIdentity, RawFrame] | None = None
         self._calibration_failed = False
         self._calibration_handoff_failed = False
+        self._pending_calibration_preview: RawFrame | None = None
         self._calibrated = calibrated
         self._calibration_previous_state: LifecycleState | None = None
         self._pending_voices: tuple[tuple[str, str], ...] | None = None
@@ -337,7 +338,8 @@ class DesktopUiController:
             ]
             | None
         ) = None
-        self._pending_runtime_failed = False
+        self._pending_runtime_failed: str | None = None
+        self._runtime_discovery_in_progress = True
         self._pending_monitoring_update: tuple[MonitoringWorker | None, str] | None = None
         self._monitoring: MonitoringWorker | None = None
         self._ocr_setup: OcrModelSetup | None = None
@@ -374,6 +376,34 @@ class DesktopUiController:
             self._controller.resume()
             self._monitoring.resume()
         self._refresh_tray_state()
+
+    def retry_runtime(self) -> None:
+        if self._runtime is not None:
+            self._safe_status("startup", "Local services are already ready")
+            return
+        if self._runtime_discovery_in_progress:
+            self._safe_status("startup", "Local services are still starting")
+            return
+        self._runtime_discovery_in_progress = True
+        if self._dashboard is not None:
+            self._dashboard.set_model_status("Retrying local setup…")
+            self._dashboard.set_calibration_status("Retrying local setup…")
+        self._safe_status("startup", "Retrying local setup")
+        submitted = self._background_tasks.submit(
+            "runtime-discovery-retry",
+            lambda cancelled: _discover_runtime(
+                cancelled,
+                self._settings,
+                self._runtime_holder,
+                self,
+                self._controller,
+                self._speech_worker,
+                False,
+            ),
+        )
+        if not submitted:
+            self._runtime_discovery_in_progress = False
+            self._safe_status("startup", "Local setup retry is unavailable")
 
     def toggle_mute(self) -> None:
         self._controller.set_muted(not self._controller.muted)
@@ -507,161 +537,225 @@ class DesktopUiController:
         if runtime is None:
             self._safe_status("models", "Model management is unavailable")
             return
+        if self._dashboard is not None:
+            self._dashboard.set_model_busy(model_id, True)
+            self._dashboard.set_model_status("Preparing verified local model download…")
 
         if model_id == STT_MODEL_ID:
             setup = self._runtime_holder.get("stt_setup")
             if not isinstance(setup, SttModelSetup):
+                if self._dashboard is not None:
+                    self._dashboard.set_model_busy(model_id, False)
                 self._safe_status("models", "Speech model setup is unavailable")
                 return
             stt_setup = setup
 
             def install_stt(cancelled: Event) -> None:
-                outcome = stt_setup.install(
-                    cancelled=cancelled.is_set,
-                    progress=lambda received, total: self._safe_status(
-                        "models", f"Speech model download {received * 100 // total}%"
-                    ),
-                )
-                self._safe_status("models", outcome.message)
-                if outcome.status not in {SttSetupStatus.INSTALLED, SttSetupStatus.READY}:
-                    return
-                monitoring = self._monitoring
-                speakers = self._runtime_holder.get("speakers")
-                path = stt_setup.ready_path()
-                if monitoring is None or not isinstance(speakers, SpeakerTracker) or path is None:
-                    self._safe_status(
-                        "models", "Start verified OCR monitoring before voice replies"
+                try:
+                    outcome = stt_setup.install(
+                        cancelled=cancelled.is_set,
+                        progress=lambda received, total: self._safe_status(
+                            "models", f"Speech model download {received * 100 // total}%"
+                        ),
                     )
-                    return
-                _activate_reply_services(
-                    self._runtime_holder,
-                    monitoring,
-                    speakers,
-                    path,
-                    self._controller,
-                    self._speech_worker,
-                    self,
-                    self._settings,
-                )
-                self._safe_status("reply", "Hold-to-talk is ready")
+                    self._safe_status("models", outcome.message)
+                    if outcome.status not in {SttSetupStatus.INSTALLED, SttSetupStatus.READY}:
+                        return
+                    self._safe_status(f"model-ready:{model_id}", "true")
+                    monitoring = self._monitoring
+                    speakers = self._runtime_holder.get("speakers")
+                    path = stt_setup.ready_path()
+                    if (
+                        monitoring is None
+                        or not isinstance(speakers, SpeakerTracker)
+                        or path is None
+                    ):
+                        self._safe_status(
+                            "models", "Start verified OCR monitoring before voice replies"
+                        )
+                        return
+                    _activate_reply_services(
+                        self._runtime_holder,
+                        monitoring,
+                        speakers,
+                        path,
+                        self._controller,
+                        self._speech_worker,
+                        self,
+                        self._settings,
+                    )
+                    self._safe_status("reply", "Hold-to-talk is ready")
+                finally:
+                    self._safe_status(f"model-busy:{model_id}", "false")
 
             if not self._background_tasks.submit("stt-model-setup", install_stt):
+                if self._dashboard is not None:
+                    self._dashboard.set_model_busy(model_id, False)
                 self._safe_status("models", "Speech model setup is already running")
             return
 
         if model_id == OCR_MODEL_ID:
             setup = self._ocr_setup
             if setup is None:
+                if self._dashboard is not None:
+                    self._dashboard.set_model_busy(model_id, False)
                 self._safe_status("models", "OCR model setup is unavailable")
                 return
 
             def install_ocr(cancelled: Event) -> None:
-                with self._calibration_lock:
-                    already_running = self._monitoring is not None
-                if already_running:
-                    self._safe_status("models", "OCR models are already active")
-                    return
-                outcome = setup.install(
-                    cancelled=cancelled.is_set,
-                    progress=lambda received, total: self._safe_status(
-                        "models", f"OCR download {received * 100 // total}%"
-                    ),
-                )
-                self._safe_status("models", outcome.message)
-                if outcome.status not in {OcrSetupStatus.INSTALLED, OcrSetupStatus.READY}:
-                    return
-                speakers = self._runtime_holder.get("speakers")
-                if not isinstance(speakers, SpeakerTracker):
-                    speakers = SpeakerTracker()
-                    self._runtime_holder["speakers"] = speakers
-                monitoring = _build_monitoring(
-                    runtime, self._controller, self._settings, setup, speakers
-                )
-                if monitoring is None:
-                    self._safe_status("models", "OCR models did not pass runtime validation")
-                    return
-                stt_setup = self._runtime_holder.get("stt_setup")
-                stt_path = stt_setup.ready_path() if isinstance(stt_setup, SttModelSetup) else None
-                if stt_path is not None:
-                    _activate_reply_services(
-                        self._runtime_holder,
-                        monitoring,
-                        speakers,
-                        stt_path,
-                        self._controller,
-                        self._speech_worker,
-                        self,
-                        self._settings,
+                try:
+                    with self._calibration_lock:
+                        already_running = self._monitoring is not None
+                    if already_running:
+                        self._safe_status("models", "OCR models are already active")
+                        self._safe_status(f"model-ready:{model_id}", "true")
+                        return
+                    outcome = setup.install(
+                        cancelled=cancelled.is_set,
+                        progress=lambda received, total: self._safe_status(
+                            "models", f"OCR download {received * 100 // total}%"
+                        ),
                     )
-                self.queue_monitoring_update(monitoring, "OCR models are ready")
+                    self._safe_status("models", outcome.message)
+                    if outcome.status not in {OcrSetupStatus.INSTALLED, OcrSetupStatus.READY}:
+                        return
+                    self._safe_status(f"model-ready:{model_id}", "true")
+                    speakers = self._runtime_holder.get("speakers")
+                    if not isinstance(speakers, SpeakerTracker):
+                        speakers = SpeakerTracker()
+                        self._runtime_holder["speakers"] = speakers
+                    monitoring = _build_monitoring(
+                        runtime, self._controller, self._settings, setup, speakers
+                    )
+                    if monitoring is None:
+                        self._safe_status("models", "OCR models did not pass runtime validation")
+                        return
+                    stt_setup = self._runtime_holder.get("stt_setup")
+                    stt_path = (
+                        stt_setup.ready_path() if isinstance(stt_setup, SttModelSetup) else None
+                    )
+                    if stt_path is not None:
+                        _activate_reply_services(
+                            self._runtime_holder,
+                            monitoring,
+                            speakers,
+                            stt_path,
+                            self._controller,
+                            self._speech_worker,
+                            self,
+                            self._settings,
+                        )
+                    self.queue_monitoring_update(monitoring, "OCR models are ready")
+                finally:
+                    self._safe_status(f"model-busy:{model_id}", "false")
 
             if not self._background_tasks.submit("ocr-model-setup", install_ocr):
+                if self._dashboard is not None:
+                    self._dashboard.set_model_busy(model_id, False)
                 self._safe_status("models", "OCR model setup is already running")
             return
 
         def download(cancelled: Event) -> None:
-            outcome = runtime.download_model(
-                model_id,
-                cancelled=cancelled.is_set,
-                progress=lambda received, total: self._safe_status(
-                    "models", f"download {received * 100 // total}%"
-                ),
-            )
-            self._safe_status("models", outcome.message)
+            try:
+                outcome = runtime.download_model(
+                    model_id,
+                    cancelled=cancelled.is_set,
+                    progress=lambda received, total: self._safe_status(
+                        "models", f"download {received * 100 // total}%"
+                    ),
+                )
+                self._safe_status("models", outcome.message)
+                if outcome.status.value == "activated":
+                    self._safe_status(f"model-ready:{model_id}", "true")
+            finally:
+                self._safe_status(f"model-busy:{model_id}", "false")
 
-        self._background_tasks.submit(f"download:{model_id}", download)
+        if (
+            not self._background_tasks.submit(f"download:{model_id}", download)
+            and self._dashboard is not None
+        ):
+            self._dashboard.set_model_busy(model_id, False)
 
     def remove_model(self, model_id: str) -> None:
         runtime = self._runtime
         if runtime is None:
             self._safe_status("models", "Model management is unavailable")
             return
+        if self._dashboard is not None:
+            self._dashboard.set_model_busy(model_id, True)
+            self._dashboard.set_model_status("Removing local model…")
 
         if model_id == STT_MODEL_ID:
             setup = self._runtime_holder.get("stt_setup")
             if not isinstance(setup, SttModelSetup):
+                if self._dashboard is not None:
+                    self._dashboard.set_model_busy(model_id, False)
                 self._safe_status("models", "Speech model setup is unavailable")
                 return
             stt_setup = setup
 
             def remove_stt(_cancelled: Event) -> None:
-                _close_hold_key(self._runtime_holder)
-                _close_reply(self._runtime_holder)
-                outcome = stt_setup.remove(in_use=False)
-                self._safe_status("models", outcome.message)
+                try:
+                    _close_hold_key(self._runtime_holder)
+                    _close_reply(self._runtime_holder)
+                    outcome = stt_setup.remove(in_use=False)
+                    self._safe_status("models", outcome.message)
+                    if outcome.status is SttSetupStatus.REMOVED:
+                        self._safe_status(f"model-ready:{model_id}", "false")
+                finally:
+                    self._safe_status(f"model-busy:{model_id}", "false")
 
             if not self._background_tasks.submit("stt-model-remove", remove_stt):
+                if self._dashboard is not None:
+                    self._dashboard.set_model_busy(model_id, False)
                 self._safe_status("models", "Speech model removal is already running")
             return
 
         if model_id == OCR_MODEL_ID:
             setup = self._ocr_setup
             if setup is None:
+                if self._dashboard is not None:
+                    self._dashboard.set_model_busy(model_id, False)
                 self._safe_status("models", "OCR model setup is unavailable")
                 return
 
             def remove_ocr(_cancelled: Event) -> None:
-                _close_hold_key(self._runtime_holder)
-                _close_reply(self._runtime_holder)
-                with self._calibration_lock:
-                    monitoring = self._monitoring
-                if monitoring is not None:
-                    monitoring.pause()
-                    monitoring.close()
-                outcome = setup.remove(in_use=False)
-                self._safe_status("models", outcome.message)
-                if outcome.status is OcrSetupStatus.REMOVED:
-                    self.queue_monitoring_update(None, "OCR models were removed")
+                try:
+                    _close_hold_key(self._runtime_holder)
+                    _close_reply(self._runtime_holder)
+                    with self._calibration_lock:
+                        monitoring = self._monitoring
+                    if monitoring is not None:
+                        monitoring.pause()
+                        monitoring.close()
+                    outcome = setup.remove(in_use=False)
+                    self._safe_status("models", outcome.message)
+                    if outcome.status is OcrSetupStatus.REMOVED:
+                        self._safe_status(f"model-ready:{model_id}", "false")
+                        self.queue_monitoring_update(None, "OCR models were removed")
+                finally:
+                    self._safe_status(f"model-busy:{model_id}", "false")
 
             if not self._background_tasks.submit("ocr-model-remove", remove_ocr):
+                if self._dashboard is not None:
+                    self._dashboard.set_model_busy(model_id, False)
                 self._safe_status("models", "OCR model removal is already running")
             return
 
         def remove(_cancelled: Event) -> None:
-            outcome = runtime.remove_model(model_id)
-            self._safe_status("models", outcome.message)
+            try:
+                outcome = runtime.remove_model(model_id)
+                self._safe_status("models", outcome.message)
+                if outcome.status.value == "removed":
+                    self._safe_status(f"model-ready:{model_id}", "false")
+            finally:
+                self._safe_status(f"model-busy:{model_id}", "false")
 
-        self._background_tasks.submit(f"remove:{model_id}", remove)
+        if (
+            not self._background_tasks.submit(f"remove:{model_id}", remove)
+            and self._dashboard is not None
+        ):
+            self._dashboard.set_model_busy(model_id, False)
 
     def set_learned_term_status(self, alias: str, status: str) -> None:
         learner = self._learner
@@ -727,7 +821,7 @@ class DesktopUiController:
             runtime_update = self._pending_runtime
             self._pending_runtime = None
             runtime_failed = self._pending_runtime_failed
-            self._pending_runtime_failed = False
+            self._pending_runtime_failed = None
             monitoring_update = self._pending_monitoring_update
             self._pending_monitoring_update = None
             reply_draft = self._pending_reply_draft
@@ -778,8 +872,17 @@ class DesktopUiController:
             self._monitoring = monitoring
             self._ocr_setup = ocr_setup
             self._calibrated = calibrated
+            self._runtime_discovery_in_progress = False
             self._dashboard.set_models(models)
             self._dashboard.set_learned_terms(learned_terms)
+            self._dashboard.set_calibration_available(True)
+            self._dashboard.set_calibration_status(
+                "Chat area saved and ready"
+                if calibrated
+                else (
+                    "Ready. Open STALZONE, click Calibrate Chat Area, then switch back to the game."
+                )
+            )
             del geometry
             if startup_degraded:
                 self._controller.restore_operational_state(LifecycleState.DEGRADED)
@@ -815,9 +918,24 @@ class DesktopUiController:
                 )
             self._safe_status("monitoring", monitoring_status)
             self._refresh_tray_state()
-        if runtime_failed:
+        if runtime_failed is not None:
+            self._runtime_discovery_in_progress = False
             self._controller.restore_operational_state(LifecycleState.DEGRADED)
-            self._safe_status("startup", "Local runtime storage could not be opened")
+            failure_messages = {
+                "runtime": "Local database or packaged resources could not be initialized",
+                "history": "Local history storage could not be initialized",
+                "learning": "Local profile learning storage could not be initialized",
+                "calibration": "Saved capture settings could not be loaded",
+                "models": "Local model setup could not be inspected",
+                "monitoring": "Capture and OCR services could not be initialized",
+            }
+            failure_message = failure_messages.get(
+                runtime_failed, "Local services could not be initialized"
+            )
+            self._dashboard.set_calibration_available(False)
+            self._dashboard.set_calibration_status(f"{failure_message}. Select Retry Setup.")
+            self._dashboard.set_model_status(f"{failure_message}. Select Retry Setup.")
+            self._safe_status("startup", failure_message)
             self._refresh_tray_state()
         self._open_pending_calibration()
         for event in self._events.drain(maximum=128):
@@ -839,6 +957,18 @@ class DesktopUiController:
             else:
                 status = event.payload
                 assert isinstance(status, UiStatus)
+                if status.key == "models":
+                    self._dashboard.set_model_status(status.value)
+                elif status.key == "calibration":
+                    self._dashboard.set_calibration_status(status.value)
+                elif status.key.startswith("model-busy:"):
+                    self._dashboard.set_model_busy(
+                        status.key.removeprefix("model-busy:"), status.value == "true"
+                    )
+                elif status.key.startswith("model-ready:"):
+                    self._dashboard.set_model_ready(
+                        status.key.removeprefix("model-ready:"), status.value == "true"
+                    )
                 self._dashboard.set_status(f"{status.key}: {status.value}")
 
     def queue_voice_update(self, voices: tuple[tuple[str, str], ...]) -> None:
@@ -881,10 +1011,10 @@ class DesktopUiController:
             if not self._ui_closed:
                 self._pending_monitoring_update = (monitoring, status)
 
-    def queue_runtime_failure(self) -> None:
+    def queue_runtime_failure(self, stage: str) -> None:
         with self._calibration_lock:
             if not self._ui_closed:
-                self._pending_runtime_failed = True
+                self._pending_runtime_failed = stage
 
     def queue_reply_draft(self, draft: ReplyDraft) -> None:
         with self._calibration_lock:
@@ -980,6 +1110,15 @@ class DesktopUiController:
         def request_save(region: ChatRegion, completed: Callable[[bool], None]) -> None:
             runtime = self._runtime
             assert runtime is not None
+            selection = session.selection
+            if selection is not None:
+                with self._calibration_lock:
+                    self._pending_calibration_preview = RawFrame(
+                        selection.width,
+                        selection.height,
+                        "BGRA",
+                        session.preview_bgra(),
+                    )
 
             def save(cancelled: Event) -> None:
                 if cancelled.is_set():
@@ -1033,19 +1172,33 @@ class DesktopUiController:
             if not submitted:
                 completed(None)
 
+        preview = _build_calibration_preview(
+            self._runtime,
+            self._ocr_setup,
+            self._settings.application.active_profile,
+            self._background_tasks,
+        )
+
+        def finished(saved: bool) -> None:
+            if preview is not None:
+                preview.close()
+            self._finish_calibration(saved)
+
         try:
             self._safe_status(
                 "calibration",
-                "OCR preview is unavailable; saving requires explicit confirmation",
+                "Draw around the complete chat panel; the local OCR preview will validate it",
             )
             launch_region_selector(
                 session,
                 request_retry=request_retry,
-                request_preview=lambda _frame, completed: completed(False, ()),
+                request_preview=preview.request if preview is not None else None,
                 request_save=request_save,
-                on_finished=self._finish_calibration,
+                on_finished=finished,
             )
         except (OSError, RuntimeError, ValueError):
+            if preview is not None:
+                preview.close()
             self._safe_status("calibration", "Calibration could not be opened")
             self._finish_calibration(saved=False)
 
@@ -1055,10 +1208,14 @@ class DesktopUiController:
             self._calibration_previous_state = None
             handoff_failed = self._calibration_handoff_failed
             self._calibration_handoff_failed = False
+            preview = self._pending_calibration_preview if saved else None
+            self._pending_calibration_preview = None
         if previous is None:
             return
         if saved:
             self._calibrated = True
+            if preview is not None and self._dashboard is not None:
+                self._dashboard.set_capture_preview(preview)
         target = (
             LifecycleState.DEGRADED
             if handoff_failed
@@ -1079,6 +1236,136 @@ class DesktopUiController:
             paused=self._controller.state is not LifecycleState.MONITORING,
             muted=self._controller.muted,
         )
+
+
+class _CalibrationPreviewWorker:
+    """Single-owner latest-value OCR preview worker for the calibration dialog."""
+
+    def __init__(
+        self,
+        detection: Path,
+        recognition: Path,
+        preprocess: object,
+        background_tasks: _BackgroundTasks,
+    ) -> None:
+        from game_chat_translator.vision.ocr_service import EventCancellationToken
+
+        self._detection = detection
+        self._recognition = recognition
+        self._preprocess = preprocess
+        self._background_tasks = background_tasks
+        self._cancellation = EventCancellationToken()
+        self._lock = Lock()
+        self._pending: tuple[int, RawFrame, Callable[[bool, tuple[str, ...]], None]] | None = None
+        self._revision = 0
+        self._running = False
+        self._closed = False
+
+    def request(
+        self,
+        frame: RawFrame,
+        completed: Callable[[bool, tuple[str, ...]], None],
+    ) -> None:
+        start = False
+        with self._lock:
+            if self._closed:
+                return
+            self._revision += 1
+            self._pending = (self._revision, frame, completed)
+            if not self._running:
+                self._running = True
+                start = True
+        if start and not self._background_tasks.submit("calibration-preview", self._run):
+            with self._lock:
+                self._running = False
+                self._pending = None
+            completed(False, ())
+
+    def close(self) -> None:
+        with self._lock:
+            if self._closed:
+                return
+            self._closed = True
+            self._pending = None
+            self._cancellation.cancel()
+
+    def _run(self, cancelled: Event) -> None:
+        from game_chat_translator.vision.base import OcrInput
+        from game_chat_translator.vision.isolated_service import (
+            IsolatedOcrService,
+            PaddleOcrProviderFactory,
+        )
+        from game_chat_translator.vision.line_grouping import group_fragments
+        from game_chat_translator.vision.preprocess import OpenCvPreprocessor
+
+        service = IsolatedOcrService(PaddleOcrProviderFactory(self._detection, self._recognition))
+        preprocessor = OpenCvPreprocessor()
+        try:
+            while not cancelled.is_set():
+                with self._lock:
+                    pending, self._pending = self._pending, None
+                    if pending is None or self._closed:
+                        self._running = False
+                        return
+                revision, frame, completed = pending
+                likely = False
+                rendered: tuple[str, ...] = ()
+                try:
+                    processed = preprocessor.process(frame, self._preprocess)  # type: ignore[arg-type]
+                    outcome = service.recognize(
+                        OcrInput(
+                            processed.pixels,
+                            processed.width,
+                            processed.height,
+                            processed.channels,
+                            revision,
+                        ),
+                        generation=lambda current=revision: current,
+                        cancellation=self._cancellation,
+                    )
+                    if outcome.error_code is None:
+                        lines = group_fragments(outcome.fragments)
+                        rendered = tuple(line.raw_text for line in lines[:8])
+                        likely = any(
+                            line.confidence >= 0.45 and line.normalized_text for line in lines
+                        )
+                except (ImportError, OSError, RuntimeError, TypeError, ValueError):
+                    pass
+                with self._lock:
+                    deliver = not self._closed and revision == self._revision
+                if deliver:
+                    completed(likely, rendered)
+        finally:
+            service.close()
+            with self._lock:
+                self._running = False
+
+
+def _build_calibration_preview(
+    runtime: CoreRuntime | None,
+    ocr_setup: OcrModelSetup | None,
+    profile_id: str,
+    background_tasks: _BackgroundTasks,
+) -> _CalibrationPreviewWorker | None:
+    if runtime is None or ocr_setup is None:
+        return None
+    try:
+        from game_chat_translator.profiles.resources import ResourceRegistry
+        from game_chat_translator.vision.preprocess import PreprocessConfig
+
+        paths = ocr_setup.ready_paths()
+        if paths is None:
+            return None
+        resources = ResourceRegistry(runtime.resource_root).load_all()
+        selected = resources[profile_id]
+        return _CalibrationPreviewWorker(
+            paths[0],
+            paths[1],
+            PreprocessConfig.from_profile(selected.profile),
+            background_tasks,
+        )
+    except (KeyError, OSError, RuntimeError, TypeError, ValueError):
+        return None
 
 
 class _StorageWorker:
@@ -1246,19 +1533,25 @@ def _discover_runtime(
     if cancelled.is_set():
         return
     runtime: CoreRuntime | None = None
+    stage = "runtime"
     try:
         runtime = CoreRuntime()
+        stage = "history"
         history = runtime.history_repository()
         history.purge_expired()
+        stage = "learning"
         learner = runtime.glossary_learner(settings.application.active_profile)
+        stage = "calibration"
         calibrated = runtime.state_repository().has_calibration(settings.application.active_profile)
         geometry = history.load_latest_geometry()
         from game_chat_translator.settings import default_data_dir
 
+        stage = "models"
         ocr_setup = OcrModelSetup(default_data_dir() / "models" / "ocr")
         stt_setup = SttModelSetup(default_data_dir() / "models" / "speech")
-        ocr_state = "Ready" if ocr_setup.ready_paths() is not None else "Required — not installed"
-        stt_state = "Ready" if stt_setup.ready_path() is not None else "Optional — not installed"
+        ocr_state = "Ready" if ocr_setup.ready_paths() is not None else "Not installed (required)"
+        stt_state = "Ready" if stt_setup.ready_path() is not None else "Not installed (optional)"
+        translation_options = runtime.model_options()
         models = (
             (
                 OCR_MODEL_ID,
@@ -1270,13 +1563,18 @@ def _discover_runtime(
                 "faster-whisper small.en — "
                 f"{stt_setup.size_bytes / 1024**2:.1f} MiB — MIT — {stt_state}",
             ),
+            (
+                "builtin.offline",
+                "Built-in reviewed offline translator — included — Ready",
+            ),
             *(
                 (
-                    entry.model_id,
-                    f"{entry.model_id} — {entry.size_bytes / 1024**3:.1f} GiB — "
-                    f"{entry.license_id} — Optional local translation",
+                    option.model_id,
+                    f"{option.model_id} — {option.size_bytes / 1024**3:.1f} GiB — "
+                    f"{option.license_id} — "
+                    f"{'Ready' if option.installed else 'Not installed (optional)'}",
                 )
-                for entry in runtime.manifest_entries
+                for option in translation_options
             ),
         )
         learned_terms = tuple(
@@ -1288,6 +1586,7 @@ def _discover_runtime(
             for candidate in learner.list_candidates()
         )
         speakers = SpeakerTracker()
+        stage = "monitoring"
         monitoring = _build_monitoring(runtime, controller, settings, ocr_setup, speakers)
         if cancelled.is_set():
             runtime.close()
@@ -1324,7 +1623,7 @@ def _discover_runtime(
     except (ImportError, OSError, RuntimeError, ValueError):
         if runtime is not None:
             runtime.close()
-        ui_controller.queue_runtime_failure()
+        ui_controller.queue_runtime_failure(stage)
 
 
 def _build_monitoring(

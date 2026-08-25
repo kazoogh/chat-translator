@@ -41,6 +41,8 @@ def bundled_migrations() -> tuple[Migration, ...]:
                 digest=hashlib.sha256(sql.encode("utf-8")).hexdigest(),
             )
         )
+    if not migrations:
+        raise MigrationError("bundled database migrations are unavailable")
     return tuple(migrations)
 
 

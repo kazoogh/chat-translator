@@ -77,6 +77,22 @@ CI or synthetic fixtures; see [`docs/release_acceptance.md`](docs/release_accept
 - [`docs/runtime_contracts.md`](docs/runtime_contracts.md): domain events, service interfaces, lifecycle, and error contracts.
 - [`data/README.md`](data/README.md): versioned glossary and translation-corpus rules.
 
+## first-run setup
+
+No API key or account is required. After installing and opening the app:
+
+1. Open **Translation Models** and choose **Download / Verify** for the required 12.5 MiB
+   PaddleOCR bundle. The built-in offline translator is already included.
+2. Open the supported game and make its chat panel visible with at least one recent message.
+3. Open **Capture**, choose **Calibrate Chat Area**, switch back to the game, and draw tightly
+   around the complete chat panel in the frozen snapshot. Check the crop preview, then save.
+4. Monitoring starts automatically when the OCR bundle and calibration are both ready. Incoming
+   translations appear on **Status**; **Pause Monitoring** then controls capture normally.
+
+The faster-whisper model is optional and is needed only for hold-to-talk voice replies. The larger
+Qwen translation models are optional quality upgrades. Model downloads are revision-pinned and
+checksum-verified; normal capture, OCR, translation, and speech stay local and offline.
+
 ## language data
 
 - 211 anonymized STALZONE translation examples.
@@ -108,7 +124,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\diagnostics.ps1 -Output diagn
 Build and verify the supported Windows installer from the locked combined runtime with:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\scripts\build_installer.ps1 -Version 0.1.1
+powershell -ExecutionPolicy Bypass -File .\scripts\build_installer.ps1 -Version 0.1.2
 powershell -ExecutionPolicy Bypass -File .\scripts\test_installer.ps1
 ```
 
