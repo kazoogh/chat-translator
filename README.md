@@ -108,7 +108,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\diagnostics.ps1 -Output diagn
 Build and verify the supported Windows installer from the locked combined runtime with:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\scripts\build_installer.ps1 -Version 0.1.0
+powershell -ExecutionPolicy Bypass -File .\scripts\build_installer.ps1 -Version 0.1.1
 powershell -ExecutionPolicy Bypass -File .\scripts\test_installer.ps1
 ```
 

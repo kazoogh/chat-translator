@@ -8,7 +8,7 @@ on:
       version:
         description: Release version without the v prefix
         required: true
-        default: 0.1.0
+        default: 0.1.1
 
 permissions:
   contents: read
@@ -102,7 +102,7 @@ jobs:
       - uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65
         with:
           prerelease: true
-          body_path: docs/release_notes_v0.1.0.md
+          body_path: docs/release_notes_v0.1.1.md
           fail_on_unmatched_files: true
           files: |
             release-assets/installer/GameChatTranslator-Setup-x64.exe
