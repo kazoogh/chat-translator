@@ -64,7 +64,8 @@ from game_chat_translator.ui.event_queue import (
     UiEventQueue,
     UiStatus,
 )
-from game_chat_translator.ui.translation_window import TranslationRow, create_translation_window
+from game_chat_translator.ui.single_instance import SingleInstanceGuard
+from game_chat_translator.ui.translation_window import TranslationRow
 from game_chat_translator.ui.tray import create_tray_icon
 from game_chat_translator.vision.model_setup import OCR_MODEL_ID, OcrModelSetup, OcrSetupStatus
 
@@ -83,6 +84,21 @@ def run_desktop_application(argv: list[str] | None = None) -> int:
     application: Any = QApplication.instance() or QApplication([])
     application.setApplicationName("Game Chat Translator")
     application.setQuitOnLastWindowClosed(False)
+    activation: dict[str, Any] = {"show": None, "pending": False}
+
+    def activate_existing_window() -> None:
+        show = activation.get("show")
+        if callable(show):
+            show()
+        else:
+            activation["pending"] = True
+
+    instance_guard = SingleInstanceGuard(
+        "GameChatTranslator.Desktop.v1",
+        activate_existing_window,
+    )
+    if not instance_guard.is_primary:
+        return 0
 
     degraded = False
     settings_store = SettingsStore()
@@ -180,6 +196,7 @@ def run_desktop_application(argv: list[str] | None = None) -> int:
         calibrated=False,
     )
     ui_controller_holder["ui"] = ui_controller
+    activation["show"] = ui_controller.show_dashboard
     dashboard: Any = create_dashboard(
         ui_controller,
         close_to_tray=settings.application.close_to_tray and tray_available,
@@ -195,8 +212,8 @@ def run_desktop_application(argv: list[str] | None = None) -> int:
         ),
         models=(),
         learned_terms=(),
+        active_profile=settings.application.active_profile,
     )
-    translation_window: Any = create_translation_window(ui_controller)
     tray: Any = create_tray_icon(
         ui_controller,
         icon_path=str(bundled_resource_root() / "assets" / "app.ico"),
@@ -204,7 +221,9 @@ def run_desktop_application(argv: list[str] | None = None) -> int:
     timer = QTimer()
     timer.setInterval(30)
     timer.timeout.connect(ui_controller.pump_events)
-    ui_controller.bind(dashboard, translation_window, tray, timer)
+    ui_controller.bind(dashboard, tray, timer)
+    if activation["pending"]:
+        QTimer.singleShot(0, ui_controller.show_dashboard)
     shortcuts = WindowsShortcutObserver(
         {
             "toggle_pause": settings.hotkeys.toggle_capture,
@@ -240,12 +259,12 @@ def run_desktop_application(argv: list[str] | None = None) -> int:
     if tray_available:
         tray.show()
     dashboard.show()
-    translation_window.show()
     application.aboutToQuit.connect(ui_controller.quit_application)
     try:
         return int(application.exec())
     finally:
         controller.quit()
+        instance_guard.close()
 
 
 class DesktopUiController:
@@ -293,7 +312,6 @@ class DesktopUiController:
             Qt.ConnectionType.QueuedConnection,
         )
         self._dashboard: Any = None
-        self._translation_window: Any = None
         self._tray: Any = None
         self._timer: Any = None
         self._ui_closed = False
@@ -328,9 +346,8 @@ class DesktopUiController:
         self._clipboard = ClipboardDispatchBridge()
         self._pending_hotkey_actions: deque[str] = deque()
 
-    def bind(self, dashboard: Any, translation_window: Any, tray: Any, timer: Any) -> None:
+    def bind(self, dashboard: Any, tray: Any, timer: Any) -> None:
         self._dashboard = dashboard
-        self._translation_window = translation_window
         self._tray = tray
         self._timer = timer
         self._refresh_tray_state()
@@ -408,8 +425,8 @@ class DesktopUiController:
         reply = self._runtime_holder.get("reply")
         if isinstance(reply, ReplyCoordinator):
             reply.clear()
-        if self._translation_window is not None:
-            self._translation_window.clear_messages()
+        if self._dashboard is not None:
+            self._dashboard.clear_messages()
 
         def clear(_cancelled: Event) -> None:
             self._controller.clear_history_backing()
@@ -763,8 +780,7 @@ class DesktopUiController:
             self._calibrated = calibrated
             self._dashboard.set_models(models)
             self._dashboard.set_learned_terms(learned_terms)
-            if geometry is not None:
-                _restore_geometry_value(self._application, self._translation_window, geometry)
+            del geometry
             if startup_degraded:
                 self._controller.restore_operational_state(LifecycleState.DEGRADED)
             elif calibrated and monitoring is not None:
@@ -776,6 +792,11 @@ class DesktopUiController:
                     self._safe_status(
                         "monitoring", "Install the verified local OCR models to start monitoring"
                     )
+            self._dashboard.set_setup_state(
+                ocr_ready=monitoring is not None,
+                calibrated=calibrated,
+                monitoring=calibrated and monitoring is not None,
+            )
             self._refresh_tray_state()
         if monitoring_update is not None:
             monitoring, monitoring_status = monitoring_update
@@ -786,6 +807,12 @@ class DesktopUiController:
                 monitoring.resume()
             else:
                 self._controller.restore_operational_state(LifecycleState.NEEDS_SETUP)
+            if self._dashboard is not None:
+                self._dashboard.set_setup_state(
+                    ocr_ready=monitoring is not None,
+                    calibrated=self._calibrated,
+                    monitoring=monitoring is not None and self._calibrated,
+                )
             self._safe_status("monitoring", monitoring_status)
             self._refresh_tray_state()
         if runtime_failed:
@@ -797,7 +824,7 @@ class DesktopUiController:
             if event.kind is UiEventKind.MESSAGE:
                 message = event.payload
                 assert isinstance(message, PresentedMessage)
-                self._translation_window.append_translation(
+                self._dashboard.append_translation(
                     TranslationRow(
                         str(message.message_id),
                         message.speaker or "Player",
@@ -907,8 +934,6 @@ class DesktopUiController:
             self._timer.stop()
         if self._tray is not None:
             self._tray.hide()
-        if self._translation_window is not None:
-            self._translation_window.hide()
         if self._dashboard is not None:
             self._dashboard.hide()
         self._ui_close_completed.set()
@@ -1232,20 +1257,24 @@ def _discover_runtime(
 
         ocr_setup = OcrModelSetup(default_data_dir() / "models" / "ocr")
         stt_setup = SttModelSetup(default_data_dir() / "models" / "speech")
+        ocr_state = "Ready" if ocr_setup.ready_paths() is not None else "Required — not installed"
+        stt_state = "Ready" if stt_setup.ready_path() is not None else "Optional — not installed"
         models = (
             (
                 OCR_MODEL_ID,
                 "PaddleOCR v5 detection + Cyrillic recognition — "
-                f"{ocr_setup.size_bytes / 1024**2:.1f} MiB — Apache-2.0",
+                f"{ocr_setup.size_bytes / 1024**2:.1f} MiB — Apache-2.0 — {ocr_state}",
             ),
             (
                 STT_MODEL_ID,
-                f"faster-whisper small.en — {stt_setup.size_bytes / 1024**2:.1f} MiB — MIT",
+                "faster-whisper small.en — "
+                f"{stt_setup.size_bytes / 1024**2:.1f} MiB — MIT — {stt_state}",
             ),
             *(
                 (
                     entry.model_id,
-                    f"{entry.model_id} — {entry.size_bytes / 1024**3:.1f} GiB — {entry.license_id}",
+                    f"{entry.model_id} — {entry.size_bytes / 1024**3:.1f} GiB — "
+                    f"{entry.license_id} — Optional local translation",
                 )
                 for entry in runtime.manifest_entries
             ),

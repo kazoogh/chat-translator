@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import Protocol
 
+from game_chat_translator.ui.translation_window import TranslationRow
+
 
 class DashboardController(Protocol):
     def toggle_pause(self) -> None: ...
@@ -52,19 +54,26 @@ def create_dashboard(
     hotkeys: tuple[tuple[str, str], ...] = (),
     models: tuple[tuple[str, str], ...] = (),
     learned_terms: tuple[tuple[str, str, str], ...] = (),
+    active_profile: str = "stalzone.default",
+    maximum_translation_rows: int = 100,
 ) -> object:
     """Create the thin dashboard view without importing Qt at module import time."""
+    if maximum_translation_rows <= 0:
+        raise ValueError("maximum translation rows must be positive")
     try:
-        from PySide6.QtCore import Qt
+        from PySide6.QtCore import Qt, QTimer
         from PySide6.QtGui import QCloseEvent
         from PySide6.QtWidgets import (
             QComboBox,
+            QHBoxLayout,
             QLabel,
             QLineEdit,
+            QListWidget,
             QMainWindow,
             QPushButton,
+            QScrollArea,
             QSlider,
-            QTabWidget,
+            QStackedWidget,
             QVBoxLayout,
             QWidget,
         )
@@ -76,9 +85,12 @@ def create_dashboard(
             super().__init__()
             self.setObjectName("dashboard")
             self.setWindowTitle("Game Chat Translator")
-            self.setMinimumSize(720, 480)
+            self.setMinimumSize(900, 620)
+            self.resize(1180, 760)
             self._close_to_tray = close_to_tray
+            self._active_profile = active_profile
             self._status_label: QLabel | None = None
+            self._setup_label: QLabel | None = None
             self._voice_combo: QComboBox | None = None
             self._model_list: QVBoxLayout | None = None
             self._learned_list: QVBoxLayout | None = None
@@ -87,8 +99,27 @@ def create_dashboard(
             self._reply_translation: QLabel | None = None
             self._reply_edit: QLineEdit | None = None
             self._reply_targets: QComboBox | None = None
-            tabs = QTabWidget(self)
-            tabs.setObjectName("dashboard-tabs")
+            self._translation_rows: QVBoxLayout | None = None
+            self._translation_scroll: QScrollArea | None = None
+            self._translation_empty: QLabel | None = None
+            self._translation_ids: set[str] = set()
+            shell = QWidget(self)
+            shell_layout = QHBoxLayout(shell)
+            shell_layout.setContentsMargins(0, 0, 0, 0)
+            shell_layout.setSpacing(0)
+            navigation_panel = QWidget()
+            navigation_panel.setObjectName("navigation-panel")
+            navigation_layout = QVBoxLayout(navigation_panel)
+            navigation_layout.setContentsMargins(14, 20, 14, 14)
+            navigation_layout.setSpacing(14)
+            brand = QLabel("GAME CHAT\nTRANSLATOR")
+            brand.setObjectName("app-brand")
+            navigation_layout.addWidget(brand)
+            navigation = QListWidget()
+            navigation.setObjectName("dashboard-navigation")
+            navigation.setFixedWidth(210)
+            pages = QStackedWidget()
+            pages.setObjectName("dashboard-pages")
             for name in (
                 "Status",
                 "Capture",
@@ -99,45 +130,171 @@ def create_dashboard(
                 "History",
                 "Diagnostics",
             ):
-                tabs.addTab(self._page(name), name)
-            self.setCentralWidget(tabs)
+                navigation.addItem(name)
+                pages.addWidget(self._page(name))
+            navigation.currentRowChanged.connect(pages.setCurrentIndex)
+            navigation.setCurrentRow(0)
+            navigation_layout.addWidget(navigation, 1)
+            footer = QLabel("Local • Private • Offline")
+            footer.setObjectName("navigation-footer")
+            navigation_layout.addWidget(footer)
+            shell_layout.addWidget(navigation_panel)
+            shell_layout.addWidget(pages, 1)
+            self.setCentralWidget(shell)
+            self._apply_theme()
+
+        def _apply_theme(self) -> None:
+            self.setStyleSheet(
+                """
+                QMainWindow, QWidget { background: #0e1415; color: #dee4e4; }
+                QWidget#navigation-panel { background: #171d1d; }
+                QLabel#app-brand {
+                    color: #55d8e1; font-size: 16px; font-weight: 700;
+                    padding: 4px 8px 14px 8px;
+                }
+                QListWidget#dashboard-navigation {
+                    background: transparent; border: 0; outline: 0; color: #bbc9ca;
+                    font-size: 14px;
+                }
+                QListWidget#dashboard-navigation::item {
+                    min-height: 42px; padding: 0 12px; border-radius: 7px;
+                }
+                QListWidget#dashboard-navigation::item:hover {
+                    background: #1b2829; color: #dee4e4;
+                }
+                QListWidget#dashboard-navigation::item:selected {
+                    background: #183033; color: #55d8e1;
+                    border-left: 3px solid #55d8e1;
+                }
+                QLabel#navigation-footer { color: #758687; padding: 8px; }
+                QLabel#page-heading { color: #dee4e4; font-size: 22px; font-weight: 600; }
+                QLabel#status-summary { color: #55d8e1; font-size: 16px; font-weight: 600; }
+                QLabel#setup-summary, QLabel#translation-empty, QLabel#models-loading,
+                QLabel#learned-terms-empty { color: #bbc9ca; }
+                QLabel#translations-heading { font-size: 18px; font-weight: 600; }
+                QLabel[translation="true"] {
+                    background: #171d1d; border-left: 2px solid #55d8e1;
+                    padding: 12px; margin: 4px; font-size: 14px;
+                }
+                QScrollArea#translation-feed {
+                    border: 1px solid #3c494a; border-radius: 10px; background: #090f10;
+                }
+                QWidget#model-card {
+                    background: #1b2121; border: 1px solid #3c494a; border-radius: 10px;
+                }
+                QLabel#model-description { font-size: 14px; }
+                QPushButton {
+                    background: #252b2b; border: 1px solid #3c494a; border-radius: 7px;
+                    padding: 8px 14px; color: #dee4e4;
+                }
+                QPushButton:hover { border-color: #55d8e1; color: #55d8e1; }
+                QPushButton:pressed { background: #303636; }
+                QPushButton#action-pause--resume, QPushButton#action-calibrate-chat-area {
+                    background: #00adb5; color: #002022; border-color: #55d8e1;
+                    font-weight: 600;
+                }
+                QComboBox, QLineEdit {
+                    background: #1b2121; border: 1px solid #3c494a; border-radius: 6px;
+                    padding: 7px; color: #dee4e4;
+                }
+                QSlider::groove:horizontal { height: 4px; background: #3c494a; }
+                QSlider::handle:horizontal {
+                    width: 14px; margin: -5px 0; border-radius: 7px; background: #55d8e1;
+                }
+                """
+            )
 
         def _page(self, name: str) -> QWidget:
             page = QWidget()
             page.setObjectName(f"page-{name.casefold().replace(' ', '-').replace('&', 'and')}")
             layout = QVBoxLayout(page)
+            layout.setContentsMargins(24, 20, 24, 20)
+            layout.setSpacing(12)
             heading = QLabel(name)
+            heading.setObjectName("page-heading")
             heading.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
             layout.addWidget(heading)
             if name == "Status":
-                self._status_label = QLabel("Starting")
+                self._status_label = QLabel("Starting local services…")
                 self._status_label.setObjectName("status-summary")
                 self._status_label.setWordWrap(True)
                 layout.addWidget(self._status_label)
+                self._setup_label = QLabel()
+                self._setup_label.setObjectName("setup-summary")
+                self._setup_label.setWordWrap(True)
+                layout.addWidget(self._setup_label)
+                self.set_setup_state(ocr_ready=False, calibrated=False, monitoring=False)
             actions = {
                 "Status": (("Pause / Resume", controller.toggle_pause),),
                 "Capture": (("Calibrate Chat Area", controller.calibrate),),
-                "Translation Models": (("Manage Models", controller.open_model_manager),),
                 "History": (("Clear History", controller.clear_history),),
                 "Diagnostics": (
                     ("Export Diagnostics", controller.export_diagnostics),
                     ("Licenses", controller.open_licenses),
                 ),
-                "Profiles": (("Learned Terms", controller.open_learned_terms),),
             }.get(name, ())
             for label, callback in actions:
                 button = QPushButton(label)
-                button.setObjectName("action-" + label.casefold().replace(" ", "-"))
+                object_name = label.casefold().replace(" ", "-").replace("/", "")
+                button.setObjectName("action-" + object_name)
                 button.clicked.connect(callback)
                 layout.addWidget(button)
+            if name == "Status":
+                translations_heading = QLabel("Live Translations")
+                translations_heading.setObjectName("translations-heading")
+                layout.addWidget(translations_heading)
+                explanation = QLabel(
+                    "Incoming player messages appear here after the OCR model is installed "
+                    "and the chat area is calibrated. Hover over a translation to see the "
+                    "recognized source text."
+                )
+                explanation.setWordWrap(True)
+                layout.addWidget(explanation)
+                scroll = QScrollArea()
+                scroll.setObjectName("translation-feed")
+                scroll.setWidgetResizable(True)
+                content = QWidget()
+                rows = QVBoxLayout(content)
+                empty = QLabel("No translations yet")
+                empty.setObjectName("translation-empty")
+                empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
+                rows.addWidget(empty)
+                rows.addStretch(1)
+                scroll.setWidget(content)
+                self._translation_scroll = scroll
+                self._translation_rows = rows
+                self._translation_empty = empty
+                layout.addWidget(scroll, 1)
             if name == "Translation Models":
+                instructions = QLabel(
+                    "All models run locally. Download / Verify the required OCR bundle first. "
+                    "Voice recognition and higher-quality translation models are optional."
+                )
+                instructions.setWordWrap(True)
+                layout.addWidget(instructions)
                 self._model_list = QVBoxLayout()
                 layout.addLayout(self._model_list)
                 self.set_models(models)
             if name == "Profiles":
+                profile = QLabel(f"Active game profile: {active_profile}")
+                profile.setObjectName("active-profile")
+                layout.addWidget(profile)
+                note = QLabel(
+                    "The active profile controls game detection, chat parsing, and glossary "
+                    "rules. Learned terms appear below after monitoring begins."
+                )
+                note.setWordWrap(True)
+                layout.addWidget(note)
                 self._learned_list = QVBoxLayout()
                 layout.addLayout(self._learned_list)
                 self.set_learned_terms(learned_terms)
+            if name == "Capture":
+                instructions = QLabel(
+                    "Open the game, start calibration, switch back to the game, then draw a "
+                    "box around chat on the frozen screenshot and save it."
+                )
+                instructions.setWordWrap(True)
+                layout.addWidget(instructions)
             if name == "Audio & Voice":
                 self._reply_status = QLabel("Reply: idle")
                 self._reply_status.setObjectName("reply-status")
@@ -243,6 +400,79 @@ def create_dashboard(
             if self._status_label is not None:
                 self._status_label.setText(status)
 
+        def set_setup_state(self, *, ocr_ready: bool, calibrated: bool, monitoring: bool) -> None:
+            if self._setup_label is None:
+                return
+            ocr = "Ready" if ocr_ready else "Download required"
+            capture = "Ready" if calibrated else "Calibration required"
+            state = "Running" if monitoring else "Waiting for setup"
+            self._setup_label.setText(
+                f"Profile: {self._active_profile}\n"
+                f"OCR models: {ocr}\n"
+                f"Chat area: {capture}\n"
+                f"Monitoring: {state}"
+            )
+
+        def append_translation(self, row: TranslationRow) -> None:
+            rows = self._translation_rows
+            if rows is None or row.message_id in self._translation_ids:
+                return
+            if self._translation_empty is not None:
+                self._translation_empty.hide()
+            label = QLabel(f"{row.speaker}: {row.natural_text}")
+            label.setObjectName(f"translation-{row.message_id}")
+            label.setProperty("message_id", row.message_id)
+            label.setProperty("translation", True)
+            label.setWordWrap(True)
+            label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+            label.setToolTip(row.source_text)
+            rows.insertWidget(rows.count() - 1, label)
+            self._translation_ids.add(row.message_id)
+            while self.message_count > maximum_translation_rows:
+                for index in range(rows.count() - 1):
+                    widget = rows.itemAt(index).widget()
+                    if widget is None or not widget.property("message_id"):
+                        continue
+                    item = rows.takeAt(index)
+                    removed = item.widget()
+                    if removed is not None:
+                        self._translation_ids.discard(str(removed.property("message_id")))
+                        removed.setParent(None)
+                        removed.deleteLater()
+                    break
+            if self._translation_scroll is not None:
+                scroll = self._translation_scroll
+
+                def scroll_to_latest() -> None:
+                    bar = scroll.verticalScrollBar()
+                    bar.setValue(bar.maximum())
+
+                QTimer.singleShot(0, scroll_to_latest)
+
+        def clear_messages(self) -> None:
+            rows = self._translation_rows
+            if rows is None:
+                return
+            for index in range(rows.count() - 2, -1, -1):
+                widget = rows.itemAt(index).widget()
+                if widget is None or not widget.property("message_id"):
+                    continue
+                item = rows.takeAt(index)
+                removed = item.widget()
+                if removed is not None:
+                    removed.setParent(None)
+                    removed.deleteLater()
+            self._translation_ids.clear()
+            if self._translation_empty is not None:
+                self._translation_empty.show()
+
+        @property
+        def message_count(self) -> int:
+            rows = self._translation_rows
+            if rows is None:
+                return 0
+            return len(self._translation_ids)
+
         def set_voices(self, available: tuple[tuple[str, str], ...], selected: str | None) -> None:
             if self._voice_combo is None:
                 return
@@ -261,8 +491,20 @@ def create_dashboard(
             if layout is None:
                 return
             self._clear_layout(layout)
+            if not available:
+                placeholder = QLabel("Loading local model status…")
+                placeholder.setObjectName("models-loading")
+                layout.addWidget(placeholder)
+                return
             for model_id, description in available:
-                layout.addWidget(QLabel(description))
+                card = QWidget()
+                card.setObjectName("model-card")
+                card_layout = QVBoxLayout(card)
+                model_label = QLabel(description)
+                model_label.setObjectName("model-description")
+                model_label.setWordWrap(True)
+                card_layout.addWidget(model_label)
+                buttons = QHBoxLayout()
                 download = QPushButton("Download / Verify")
                 download.setObjectName(f"download-{model_id}")
                 download.clicked.connect(
@@ -273,14 +515,22 @@ def create_dashboard(
                 remove.clicked.connect(
                     lambda _checked=False, selected=model_id: controller.remove_model(selected)
                 )
-                layout.addWidget(download)
-                layout.addWidget(remove)
+                buttons.addStretch(1)
+                buttons.addWidget(download)
+                buttons.addWidget(remove)
+                card_layout.addLayout(buttons)
+                layout.addWidget(card)
 
         def set_learned_terms(self, available: tuple[tuple[str, str, str], ...]) -> None:
             layout = self._learned_list
             if layout is None:
                 return
             self._clear_layout(layout)
+            if not available:
+                placeholder = QLabel("No learned terms yet")
+                placeholder.setObjectName("learned-terms-empty")
+                layout.addWidget(placeholder)
+                return
             for alias, canonical, status in available:
                 layout.addWidget(QLabel(f"{alias} → {canonical} ({status})"))
                 if status == "pending":

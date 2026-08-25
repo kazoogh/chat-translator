@@ -5,7 +5,7 @@ from dataclasses import dataclass, field
 import pytest
 
 from game_chat_translator.ui.dashboard import create_dashboard
-from game_chat_translator.ui.translation_window import TranslationRow, create_translation_window
+from game_chat_translator.ui.translation_window import TranslationRow
 from game_chat_translator.ui.tray import create_tray_icon
 
 pytestmark = pytest.mark.windows_ui
@@ -94,13 +94,13 @@ def test_dashboard_has_required_tabs_actions_and_closes_to_tray(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     application = _application(monkeypatch)
-    from PySide6.QtWidgets import QPushButton, QTabWidget
+    from PySide6.QtWidgets import QListWidget, QPushButton, QStackedWidget
 
     controller = Controller()
     dashboard = create_dashboard(controller)
     dashboard.show()
-    tabs = dashboard.findChild(QTabWidget, "dashboard-tabs")
-    assert [tabs.tabText(index) for index in range(tabs.count())] == [
+    navigation = dashboard.findChild(QListWidget, "dashboard-navigation")
+    assert [navigation.item(index).text() for index in range(navigation.count())] == [
         "Status",
         "Capture",
         "Profiles",
@@ -110,12 +110,13 @@ def test_dashboard_has_required_tabs_actions_and_closes_to_tray(
         "History",
         "Diagnostics",
     ]
+    pages = dashboard.findChild(QStackedWidget, "dashboard-pages")
+    navigation.setCurrentRow(3)
+    assert pages.currentIndex() == 3
     buttons = {button.text(): button for button in dashboard.findChildren(QPushButton)}
     for label in (
         "Pause / Resume",
         "Calibrate Chat Area",
-        "Learned Terms",
-        "Manage Models",
         "Clear History",
         "Export Diagnostics",
         "Licenses",
@@ -124,8 +125,6 @@ def test_dashboard_has_required_tabs_actions_and_closes_to_tray(
     assert controller.calls == [
         "pause",
         "calibrate",
-        "terms",
-        "models",
         "clear",
         "diagnostics",
         "licenses",
@@ -189,27 +188,26 @@ def test_audio_controls_delegate_bounded_values(monkeypatch: pytest.MonkeyPatch)
     assert controller.calls == ["rate:250", "volume:70", "voice:voice-1"]
 
 
-def test_translation_window_is_always_on_top_bounded_and_reports_geometry(
+def test_dashboard_embeds_a_bounded_translation_feed(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     application = _application(monkeypatch)
-    from PySide6.QtCore import Qt
     from PySide6.QtWidgets import QLabel
 
     controller = Controller()
-    window = create_translation_window(controller, maximum_rows=2)
-    assert window.windowFlags() & Qt.WindowType.WindowStaysOnTopHint
+    dashboard = create_dashboard(controller, maximum_translation_rows=2)
     for index in range(3):
-        window.append_translation(
+        dashboard.append_translation(
             TranslationRow(str(index), f"p{index}", f"message {index}", f"source {index}")
         )
     application.processEvents()
-    assert window.message_count == 2
-    assert window.findChild(QLabel, "translation-0") is None
-    window.setGeometry(20, 30, 500, 300)
-    window._publish_geometry()
-    assert controller.geometries[-1] == (20, 30, 500, 300)
-    window.close()
+    assert dashboard.message_count == 2
+    assert dashboard.findChild(QLabel, "translation-0") is None
+    assert dashboard.findChild(QLabel, "translation-2").toolTip() == "source 2"
+    dashboard.clear_messages()
+    assert dashboard.message_count == 0
+    assert dashboard.findChild(QLabel, "translation-empty").isHidden() is False
+    dashboard.close()
 
 
 def test_tray_actions_delegate_without_owning_shutdown(monkeypatch: pytest.MonkeyPatch) -> None:
