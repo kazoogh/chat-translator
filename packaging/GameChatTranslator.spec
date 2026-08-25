@@ -16,6 +16,10 @@ datas = [
     (str(project_root / "data"), "game_chat_translator/resources/data"),
     (str(project_root / "profiles"), "game_chat_translator/resources/profiles"),
     (
+        str(source_root / "game_chat_translator" / "storage" / "migrations"),
+        "game_chat_translator/storage/migrations",
+    ),
+    (
         str(project_root / "THIRD_PARTY_NOTICES.md"),
         "game_chat_translator/resources",
     ),

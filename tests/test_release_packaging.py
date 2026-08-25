@@ -29,6 +29,7 @@ def test_pyinstaller_spec_collects_required_local_runtime_boundaries() -> None:
         "win32com",
         "game_chat_translator/resources/profiles",
         "game_chat_translator/resources/data",
+        "game_chat_translator/storage/migrations",
     ):
         assert required in spec
     assert "console=False" in spec

@@ -2,10 +2,13 @@ from __future__ import annotations
 
 from typing import Protocol
 
+from game_chat_translator.capture.base import RawFrame
 from game_chat_translator.ui.translation_window import TranslationRow
 
 
 class DashboardController(Protocol):
+    def retry_runtime(self) -> None: ...
+
     def toggle_pause(self) -> None: ...
 
     def calibrate(self) -> None: ...
@@ -62,7 +65,7 @@ def create_dashboard(
         raise ValueError("maximum translation rows must be positive")
     try:
         from PySide6.QtCore import Qt, QTimer
-        from PySide6.QtGui import QCloseEvent
+        from PySide6.QtGui import QCloseEvent, QImage, QPixmap, QResizeEvent
         from PySide6.QtWidgets import (
             QComboBox,
             QHBoxLayout,
@@ -91,6 +94,15 @@ def create_dashboard(
             self._active_profile = active_profile
             self._status_label: QLabel | None = None
             self._setup_label: QLabel | None = None
+            self._pause_button: QPushButton | None = None
+            self._calibrate_button: QPushButton | None = None
+            self._calibration_status: QLabel | None = None
+            self._capture_preview: QLabel | None = None
+            self._capture_preview_meta: QLabel | None = None
+            self._capture_preview_pixmap: QPixmap | None = None
+            self._model_status: QLabel | None = None
+            self._model_labels: dict[str, QLabel] = {}
+            self._model_buttons: dict[str, tuple[QPushButton, QPushButton]] = {}
             self._voice_combo: QComboBox | None = None
             self._model_list: QVBoxLayout | None = None
             self._learned_list: QVBoxLayout | None = None
@@ -171,6 +183,11 @@ def create_dashboard(
                 QLabel#status-summary { color: #55d8e1; font-size: 16px; font-weight: 600; }
                 QLabel#setup-summary, QLabel#translation-empty, QLabel#models-loading,
                 QLabel#learned-terms-empty { color: #bbc9ca; }
+                QLabel#capture-preview {
+                    background: #090f10; border: 1px solid #3c494a;
+                    border-radius: 10px; color: #758687; padding: 10px;
+                }
+                QLabel#capture-preview-meta { color: #758687; }
                 QLabel#translations-heading { font-size: 18px; font-weight: 600; }
                 QLabel[translation="true"] {
                     background: #171d1d; border-left: 2px solid #55d8e1;
@@ -225,7 +242,10 @@ def create_dashboard(
                 layout.addWidget(self._setup_label)
                 self.set_setup_state(ocr_ready=False, calibrated=False, monitoring=False)
             actions = {
-                "Status": (("Pause / Resume", controller.toggle_pause),),
+                "Status": (
+                    ("Pause / Resume", controller.toggle_pause),
+                    ("Retry Setup", controller.retry_runtime),
+                ),
                 "Capture": (("Calibrate Chat Area", controller.calibrate),),
                 "History": (("Clear History", controller.clear_history),),
                 "Diagnostics": (
@@ -239,6 +259,14 @@ def create_dashboard(
                 button.setObjectName("action-" + object_name)
                 button.clicked.connect(callback)
                 layout.addWidget(button)
+                if label == "Pause / Resume":
+                    self._pause_button = button
+                    button.setEnabled(False)
+                    button.setText("Finish setup to start monitoring")
+                elif label == "Calibrate Chat Area":
+                    self._calibrate_button = button
+                    button.setEnabled(False)
+                    button.setText("Starting calibration services…")
             if name == "Status":
                 translations_heading = QLabel("Live Translations")
                 translations_heading.setObjectName("translations-heading")
@@ -267,11 +295,16 @@ def create_dashboard(
                 layout.addWidget(scroll, 1)
             if name == "Translation Models":
                 instructions = QLabel(
-                    "All models run locally. Download / Verify the required OCR bundle first. "
-                    "Voice recognition and higher-quality translation models are optional."
+                    "No API key is required. Everything runs locally after setup. Download / "
+                    "Verify the required OCR bundle first. Voice recognition and larger "
+                    "translation models are optional."
                 )
                 instructions.setWordWrap(True)
                 layout.addWidget(instructions)
+                self._model_status = QLabel("Checking installed models…")
+                self._model_status.setObjectName("model-status")
+                self._model_status.setWordWrap(True)
+                layout.addWidget(self._model_status)
                 self._model_list = QVBoxLayout()
                 layout.addLayout(self._model_list)
                 self.set_models(models)
@@ -295,6 +328,24 @@ def create_dashboard(
                 )
                 instructions.setWordWrap(True)
                 layout.addWidget(instructions)
+                self._calibration_status = QLabel("Waiting for local storage and capture services…")
+                self._calibration_status.setObjectName("calibration-status")
+                self._calibration_status.setWordWrap(True)
+                layout.addWidget(self._calibration_status)
+                self._capture_preview = QLabel(
+                    "The selected chat-area snapshot will appear here after calibration."
+                )
+                self._capture_preview.setObjectName("capture-preview")
+                self._capture_preview.setAlignment(Qt.AlignmentFlag.AlignCenter)
+                self._capture_preview.setMinimumHeight(260)
+                self._capture_preview.setMaximumHeight(430)
+                self._capture_preview.setWordWrap(True)
+                layout.addWidget(self._capture_preview, 1)
+                self._capture_preview_meta = QLabel(
+                    "Preview is kept in memory only and is never saved to disk."
+                )
+                self._capture_preview_meta.setObjectName("capture-preview-meta")
+                layout.addWidget(self._capture_preview_meta)
             if name == "Audio & Voice":
                 self._reply_status = QLabel("Reply: idle")
                 self._reply_status.setObjectName("reply-status")
@@ -412,6 +463,93 @@ def create_dashboard(
                 f"Chat area: {capture}\n"
                 f"Monitoring: {state}"
             )
+            if self._pause_button is not None:
+                can_monitor = ocr_ready and calibrated
+                self._pause_button.setEnabled(can_monitor)
+                self._pause_button.setText(
+                    "Pause Monitoring"
+                    if monitoring
+                    else "Resume Monitoring"
+                    if can_monitor
+                    else "Finish setup to start monitoring"
+                )
+
+        def set_calibration_available(self, available: bool) -> None:
+            if self._calibrate_button is not None:
+                self._calibrate_button.setEnabled(available)
+                self._calibrate_button.setText(
+                    "Calibrate Chat Area" if available else "Calibration unavailable"
+                )
+
+        def set_calibration_status(self, status: str) -> None:
+            if self._calibration_status is not None:
+                self._calibration_status.setText(status)
+
+        def set_capture_preview(self, frame: RawFrame) -> None:
+            if self._capture_preview is None:
+                return
+            if (
+                frame.pixel_format != "BGRA"
+                or frame.width <= 0
+                or frame.height <= 0
+                or len(frame.pixels) != frame.width * frame.height * 4
+            ):
+                return
+            image = QImage(
+                frame.pixels,
+                frame.width,
+                frame.height,
+                frame.width * 4,
+                QImage.Format.Format_ARGB32,
+            ).copy()
+            self._capture_preview_pixmap = QPixmap.fromImage(image)
+            self._render_capture_preview()
+            if self._capture_preview_meta is not None:
+                self._capture_preview_meta.setText(
+                    f"Selected area: {frame.width} x {frame.height} pixels • memory-only preview"
+                )
+
+        def _render_capture_preview(self) -> None:
+            label = self._capture_preview
+            pixmap = self._capture_preview_pixmap
+            if label is None or pixmap is None:
+                return
+            target = label.size()
+            target.setWidth(max(1, target.width() - 20))
+            target.setHeight(max(1, target.height() - 20))
+            label.setPixmap(
+                pixmap.scaled(
+                    target,
+                    Qt.AspectRatioMode.KeepAspectRatio,
+                    Qt.TransformationMode.SmoothTransformation,
+                )
+            )
+
+        def resizeEvent(self, event: QResizeEvent) -> None:
+            super().resizeEvent(event)
+            self._render_capture_preview()
+
+        def set_model_status(self, status: str) -> None:
+            if self._model_status is not None:
+                self._model_status.setText(status)
+
+        def set_model_busy(self, model_id: str, busy: bool) -> None:
+            buttons = self._model_buttons.get(model_id)
+            if buttons is None:
+                return
+            for button in buttons:
+                button.setEnabled(not busy)
+
+        def set_model_ready(self, model_id: str, ready: bool) -> None:
+            label = self._model_labels.get(model_id)
+            if label is not None:
+                description = str(label.property("base_description") or label.text())
+                label.setText(f"{description} — {'Ready' if ready else 'Not installed'}")
+            buttons = self._model_buttons.get(model_id)
+            if buttons is not None:
+                download, remove = buttons
+                download.setEnabled(not ready)
+                remove.setEnabled(ready)
 
         def append_translation(self, row: TranslationRow) -> None:
             rows = self._translation_rows
@@ -491,6 +629,8 @@ def create_dashboard(
             if layout is None:
                 return
             self._clear_layout(layout)
+            self._model_labels.clear()
+            self._model_buttons.clear()
             if not available:
                 placeholder = QLabel("Loading local model status…")
                 placeholder.setObjectName("models-loading")
@@ -503,7 +643,14 @@ def create_dashboard(
                 model_label = QLabel(description)
                 model_label.setObjectName("model-description")
                 model_label.setWordWrap(True)
+                ready = description.rstrip().endswith("Ready")
+                base_description = description.rsplit(" — ", 1)[0]
+                model_label.setProperty("base_description", base_description)
+                self._model_labels[model_id] = model_label
                 card_layout.addWidget(model_label)
+                if model_id == "builtin.offline":
+                    layout.addWidget(card)
+                    continue
                 buttons = QHBoxLayout()
                 download = QPushButton("Download / Verify")
                 download.setObjectName(f"download-{model_id}")
@@ -520,6 +667,11 @@ def create_dashboard(
                 buttons.addWidget(remove)
                 card_layout.addLayout(buttons)
                 layout.addWidget(card)
+                self._model_buttons[model_id] = (download, remove)
+                download.setEnabled(not ready)
+                remove.setEnabled(ready)
+            if self._model_status is not None:
+                self._model_status.setText("Model status loaded")
 
         def set_learned_terms(self, available: tuple[tuple[str, str, str], ...]) -> None:
             layout = self._learned_list

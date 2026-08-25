@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 
 import pytest
 
+from game_chat_translator.capture.base import RawFrame
 from game_chat_translator.ui.dashboard import create_dashboard
 from game_chat_translator.ui.translation_window import TranslationRow
 from game_chat_translator.ui.tray import create_tray_icon
@@ -15,6 +16,9 @@ pytestmark = pytest.mark.windows_ui
 class Controller:
     calls: list[str] = field(default_factory=list)
     geometries: list[tuple[int, int, int, int]] = field(default_factory=list)
+
+    def retry_runtime(self) -> None:
+        self.calls.append("retry")
 
     def toggle_pause(self) -> None:
         self.calls.append("pause")
@@ -98,6 +102,8 @@ def test_dashboard_has_required_tabs_actions_and_closes_to_tray(
 
     controller = Controller()
     dashboard = create_dashboard(controller)
+    dashboard.set_setup_state(ocr_ready=True, calibrated=True, monitoring=True)
+    dashboard.set_calibration_available(True)
     dashboard.show()
     navigation = dashboard.findChild(QListWidget, "dashboard-navigation")
     assert [navigation.item(index).text() for index in range(navigation.count())] == [
@@ -113,17 +119,19 @@ def test_dashboard_has_required_tabs_actions_and_closes_to_tray(
     pages = dashboard.findChild(QStackedWidget, "dashboard-pages")
     navigation.setCurrentRow(3)
     assert pages.currentIndex() == 3
-    buttons = {button.text(): button for button in dashboard.findChildren(QPushButton)}
+    buttons = {button.objectName(): button for button in dashboard.findChildren(QPushButton)}
     for label in (
-        "Pause / Resume",
-        "Calibrate Chat Area",
-        "Clear History",
-        "Export Diagnostics",
-        "Licenses",
+        "action-pause--resume",
+        "action-retry-setup",
+        "action-calibrate-chat-area",
+        "action-clear-history",
+        "action-export-diagnostics",
+        "action-licenses",
     ):
         buttons[label].click()
     assert controller.calls == [
         "pause",
+        "retry",
         "calibrate",
         "clear",
         "diagnostics",
@@ -156,21 +164,41 @@ def test_model_and_learning_actions_require_explicit_clicks(
     controller = Controller()
     dashboard = create_dashboard(
         controller,
-        models=(("model-1", "Local model 1"),),
+        models=(
+            ("model-1", "Local model 1 — Not installed"),
+            ("model-2", "Local model 2 — Ready"),
+        ),
         learned_terms=(("alias", "Canonical", "pending"),),
     )
     assert controller.calls == []
     dashboard.findChild(QPushButton, "download-model-1").click()
-    dashboard.findChild(QPushButton, "remove-model-1").click()
+    dashboard.findChild(QPushButton, "remove-model-2").click()
     buttons = {button.text(): button for button in dashboard.findChildren(QPushButton)}
     buttons["Accept alias"].click()
     buttons["Reject alias"].click()
     assert controller.calls == [
         "download:model-1",
-        "remove:model-1",
+        "remove:model-2",
         "term:alias:active",
         "term:alias:rejected",
     ]
+
+
+def test_capture_page_displays_memory_only_saved_crop(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _application(monkeypatch)
+    from PySide6.QtWidgets import QLabel
+
+    dashboard = create_dashboard(Controller())
+    pixels = bytes((20, 40, 60, 255)) * (20 * 10)
+    dashboard.set_capture_preview(RawFrame(20, 10, "BGRA", pixels))
+
+    preview = dashboard.findChild(QLabel, "capture-preview")
+    metadata = dashboard.findChild(QLabel, "capture-preview-meta")
+    assert preview.pixmap() is not None
+    assert not preview.pixmap().isNull()
+    assert metadata.text() == "Selected area: 20 x 10 pixels • memory-only preview"
 
 
 def test_audio_controls_delegate_bounded_values(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -61,6 +61,7 @@ def launch_region_selector(
         side_panel_width=side_panel_width,
         device_pixel_ratio=target_screen.devicePixelRatio(),
     )
+    panel_left = available.width() - side_panel_width
 
     class RegionSelector(QWidget):  # type: ignore[misc]
         HANDLE_RADIUS = 8
@@ -75,7 +76,10 @@ def launch_region_selector(
             self.setWindowFlags(
                 Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint
             )
-            self.setFixedSize(viewport.view_width + side_panel_width, viewport.view_height)
+            # Cover the complete available display.  The captured game client is fitted into
+            # the left canvas; leaving the rest of the live game visible makes the frozen
+            # image look duplicated whenever the client aspect ratio differs from the screen.
+            self.setFixedSize(available.width(), available.height())
             self.move(available.topLeft())
             self._image = self._new_image()
             self._mode: str | None = None
@@ -102,7 +106,7 @@ def launch_region_selector(
             ).copy()
 
         def _create_buttons(self) -> None:
-            left = viewport.view_width + 20
+            left = panel_left + 20
             width = side_panel_width - 40
             actions = [
                 ("Save", self._save),
@@ -119,10 +123,16 @@ def launch_region_selector(
 
         def paintEvent(self, _: Any) -> None:
             painter = QPainter(self)
+            painter.fillRect(self.rect(), QColor("#090c0f"))
             image_target = QRect(0, 0, viewport.view_width, viewport.view_height)
             painter.drawImage(image_target, self._image)
             painter.fillRect(image_target, QColor(0, 0, 0, 140))
-            panel = QRect(viewport.view_width, 0, side_panel_width, viewport.view_height)
+            panel = QRect(
+                panel_left,
+                0,
+                side_panel_width,
+                available.height(),
+            )
             painter.fillRect(panel, QColor("#16181d"))
             painter.setPen(QColor("#f5f7fa"))
             painter.drawText(
@@ -149,6 +159,7 @@ def launch_region_selector(
             preview_target = QRect(preview_area.topLeft(), scaled)
             painter.drawImage(preview_target, self._image, source)
             painter.setPen(QPen(QColor("#40c4ff"), 1))
+            painter.setBrush(Qt.BrushStyle.NoBrush)
             painter.drawRect(preview_target)
             if session.preview_has_likely_text is False:
                 painter.setPen(QColor("#ffb74d"))
@@ -167,7 +178,11 @@ def launch_region_selector(
 
         def mousePressEvent(self, event: QMouseEvent) -> None:
             point = event.position().toPoint()
-            if event.button() != Qt.MouseButton.LeftButton or point.x() >= viewport.view_width:
+            if (
+                event.button() != Qt.MouseButton.LeftButton
+                or point.x() >= viewport.view_width
+                or point.y() >= viewport.view_height
+            ):
                 return
             self._last_point = point
             handle = self._hit_handle(point)
